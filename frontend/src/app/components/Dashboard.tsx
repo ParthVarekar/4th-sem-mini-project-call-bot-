@@ -1,193 +1,173 @@
 import React, { useEffect, useState } from 'react';
-import { Phone, PhoneMissed, DollarSign, Heart, TrendingUp, ArrowUpRight, ArrowDownRight, MoreHorizontal, Utensils, Truck, AlertCircle, Crown, Loader2 } from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, AreaChart, Area } from 'recharts';
-import { FrequentCustomerTracker } from './FrequentCustomerTracker';
-import { ordersService, WeeklyOrder, RegionalActivity, DashboardKPIs } from '../services/ordersService';
-import { rewardsService, LoyaltyCustomer } from '../services/rewardsService';
+import { Cell, Pie, PieChart, ResponsiveContainer, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
+import { DollarSign, Loader2, Package, ShoppingBag, Truck } from 'lucide-react';
 
-const COLORS = ['#f97316', '#334155'];
+import { ordersService, DashboardKPIs, MenuPerformanceItem, PantryStat, RegionalActivity, WeeklyOrder } from '../services/ordersService';
+import { LoyaltyCustomer, rewardsService } from '../services/rewardsService';
+import { FrequentCustomerTracker } from './FrequentCustomerTracker';
+
+const COLORS = ['#f97316', '#0ea5e9', '#94a3b8'];
 
 export const Dashboard: React.FC = () => {
   const [weeklyOrdersData, setWeeklyOrdersData] = useState<WeeklyOrder[]>([]);
   const [regionData, setRegionData] = useState<RegionalActivity[]>([]);
   const [topLoyaltyCustomers, setTopLoyaltyCustomers] = useState<LoyaltyCustomer[]>([]);
-  const [kpis, setKpis] = useState<DashboardKPIs>({});
+  const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
+  const [pantryBreakdown, setPantryBreakdown] = useState<PantryStat[]>([]);
+  const [menuPerformance, setMenuPerformance] = useState<MenuPerformanceItem[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [ordersRes, rewardsRes, kpiRes] = await Promise.all([
-          ordersService.fetchWeeklyOrders(),
+        const [dashboardData, rewardsData] = await Promise.all([
+          ordersService.fetchDashboardStats(),
           rewardsService.fetchRewardsData(),
-          ordersService.fetchDashboardKPIs()
         ]);
-        setWeeklyOrdersData(ordersRes.weeklyOrders);
-        setRegionData(ordersRes.regionalActivity);
-        setTopLoyaltyCustomers(rewardsRes.customers.slice(0, 3));
-        setKpis(kpiRes);
+
+        setWeeklyOrdersData(dashboardData.weeklyOrders);
+        setRegionData(dashboardData.regionalActivity);
+        setPantryBreakdown(dashboardData.pantryBreakdown);
+        setMenuPerformance(dashboardData.menuPerformance);
+        setKpis(dashboardData.kpis);
+        setTopLoyaltyCustomers(rewardsData.customers.slice(0, 3));
       } catch (error) {
-        console.error("Dashboard data load failed:", error);
+        console.error('Dashboard data load failed:', error);
       } finally {
         setIsLoading(false);
       }
     }
+
     loadData();
   }, []);
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[500px]">
-        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+      <div className="flex min-h-[500px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
       </div>
     );
   }
 
+  const strongestChannel = [...regionData].sort((left, right) => right.value - left.value)[0];
+
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between mb-8">
+      <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-3xl font-bold text-white tracking-tight">Restaurant Analytics</h1>
-          <p className="text-slate-400 mt-1 text-sm">Live Kitchen & Sales Performance</p>
-        </div>
-        <div className="flex gap-3">
-          <div className="px-4 py-2 bg-[#1c1c24] border border-white/5 rounded-xl text-xs text-slate-400 flex items-center gap-2">
-            <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
-            Kitchen Live
-          </div>
+          <h1 className="text-3xl font-bold tracking-tight text-white">Restaurant Analytics</h1>
+          <p className="mt-1 text-sm text-slate-400">Live sales, pantry, and customer activity from your backend data.</p>
         </div>
       </div>
 
-      {/* Top Row Charts */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Weekly Orders Chart */}
-        <div className="lg:col-span-2 bg-[#13131a] p-6 rounded-3xl border border-white/5 shadow-xl relative overflow-hidden group">
-          <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-100 transition-opacity">
-            <MoreHorizontal className="text-slate-500 hover:text-white cursor-pointer" />
-          </div>
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-6">Weekly Orders</h3>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <MetricCard
+          icon={<ShoppingBag className="h-5 w-5 text-orange-400" />}
+          label="Weekly Orders"
+          value={String(kpis?.totalOrders || 0)}
+          subtitle="Last 7 days"
+        />
+        <MetricCard
+          icon={<DollarSign className="h-5 w-5 text-emerald-400" />}
+          label="Weekly Revenue"
+          value={`$${(kpis?.totalRevenue || 0).toFixed(2)}`}
+          subtitle="Tracked order revenue"
+        />
+        <MetricCard
+          icon={<Package className="h-5 w-5 text-sky-400" />}
+          label="Average Order"
+          value={`$${(kpis?.avgOrderValue || 0).toFixed(2)}`}
+          subtitle="Average ticket size"
+        />
+        <MetricCard
+          icon={<Truck className="h-5 w-5 text-violet-400" />}
+          label="Delivery Mix"
+          value={`${kpis?.deliveryPercentage || 0}%`}
+          subtitle={`${kpis?.takeoutPercentage || 0}% takeout`}
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+        <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl lg:col-span-2">
+          <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Weekly Orders</h3>
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weeklyOrdersData}>
-                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#27272a" />
-                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 12 }} dy={10} />
-                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#52525b', fontSize: 12 }} />
+                <CartesianGrid stroke="#27272a" strokeDasharray="3 3" vertical={false} />
+                <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 12 }} />
                 <Tooltip
                   cursor={{ fill: '#18181b' }}
                   contentStyle={{ borderRadius: '12px', border: '1px solid #27272a', backgroundColor: '#09090b', color: '#fff' }}
-                  itemStyle={{ color: '#f97316' }}
                 />
-                <Bar dataKey="orders" fill="#f97316" radius={[4, 4, 0, 0]} barSize={40} />
+                <Bar dataKey="orders" fill="#f97316" radius={[6, 6, 0, 0]} barSize={36} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        {/* Regional Activity Donut */}
-        <div className="bg-[#13131a] p-6 rounded-3xl border border-white/5 shadow-xl flex flex-col relative overflow-hidden">
-          <div className="absolute top-0 right-0 p-6">
-            <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse shadow-[0_0_10px_#f97316]"></div>
-          </div>
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest mb-2">Regional Activity</h3>
-          <div className="flex-1 flex items-center justify-center relative">
-            <ResponsiveContainer width="100%" height={200}>
+        <div className="flex flex-col rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
+          <h3 className="mb-2 text-xs font-bold uppercase tracking-widest text-slate-500">Order Mix</h3>
+          <div className="relative flex flex-1 items-center justify-center">
+            <ResponsiveContainer width="100%" height={220}>
               <PieChart>
-                <Pie
-                  data={regionData}
-                  cx="50%"
-                  cy="50%"
-                  innerRadius={60}
-                  outerRadius={80}
-                  fill="#8884d8"
-                  paddingAngle={5}
-                  dataKey="value"
-                  stroke="none"
-                >
-                  {regionData.map((entry, index) => (
-                    <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                <Pie data={regionData} dataKey="value" innerRadius={58} outerRadius={82} paddingAngle={4} stroke="none">
+                  {regionData.map((item, index) => (
+                    <Cell key={item.name} fill={COLORS[index % COLORS.length]} />
                   ))}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
-            {/* Center Text */}
-            <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
-              <div className="text-center">
-                <span className="text-2xl font-bold text-white block">{regionData.find(r => r.name === 'Dine-in')?.value || 0}%</span>
-                <span className="text-[10px] text-slate-500 uppercase tracking-wider">Dine-in</span>
+            {strongestChannel ? (
+              <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                <div className="text-center">
+                  <span className="block text-2xl font-bold text-white">{strongestChannel.value}%</span>
+                  <span className="text-[10px] uppercase tracking-wider text-slate-500">{strongestChannel.name}</span>
+                </div>
               </div>
-            </div>
+            ) : null}
           </div>
-          <div className="mt-4 flex justify-center gap-6">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-orange-500"></div>
-              <span className="text-xs text-slate-400">Dine-in: {regionData.find(r => r.name === 'Dine-in')?.value || 0}%</span>
-            </div>
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-slate-700"></div>
-              <span className="text-xs text-slate-400">Delivery: {regionData.find(r => r.name === 'Delivery')?.value || 0}%</span>
-            </div>
+          <div className="mt-4 space-y-2">
+            {regionData.map((item, index) => (
+              <div key={item.name} className="flex items-center justify-between text-xs text-slate-400">
+                <div className="flex items-center gap-2">
+                  <span className="h-2 w-2 rounded-full" style={{ backgroundColor: COLORS[index % COLORS.length] }} />
+                  <span>{item.name}</span>
+                </div>
+                <span>{item.value}%</span>
+              </div>
+            ))}
           </div>
         </div>
       </div>
 
-      {/* Top Loyalty Customers */}
-      <div className="bg-[#13131a] p-6 rounded-3xl border border-white/5 shadow-xl">
-        <div className="flex justify-between items-center mb-6">
-          <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Top Loyalty Customers</h3>
-          <Crown className="w-4 h-4 text-orange-500" />
+      <div className="rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
+        <div className="mb-6 flex items-center justify-between">
+          <h3 className="text-xs font-bold uppercase tracking-widest text-slate-500">Top Loyalty Customers</h3>
         </div>
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          {topLoyaltyCustomers.map((customer, idx) => (
-            <FrequentCustomerTracker key={idx} customer={customer} />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
+          {topLoyaltyCustomers.map((customer) => (
+            <FrequentCustomerTracker key={customer.id || customer.phone} customer={customer} />
           ))}
         </div>
       </div>
 
-      {/* Bottom Row */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Pantry Breakdown */}
-        <div className="bg-[#13131a] p-6 rounded-3xl border border-white/5 shadow-xl">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Pantry Breakdown</h3>
-            <Utensils className="w-4 h-4 text-orange-500" />
-          </div>
-
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+        <div className="rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
+          <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Pantry Breakdown</h3>
           <div className="grid grid-cols-2 gap-4">
-            <PantryItem label="Vegetables" value={27} color="bg-rose-500" />
-            <PantryItem label="Fruits" value={54} color="bg-orange-500" />
-            <PantryItem label="Meat & Dairy" value={32} color="bg-emerald-500" />
-            <PantryItem label="Dry Goods" value={59} color="bg-blue-500" />
+            {pantryBreakdown.map((item, index) => (
+              <PantryItem key={item.label} label={item.label} value={item.value} index={index} />
+            ))}
           </div>
         </div>
 
-        {/* Menu Performance */}
-        <div className="bg-[#13131a] p-6 rounded-3xl border border-white/5 shadow-xl">
-          <div className="flex justify-between items-center mb-6">
-            <h3 className="text-xs font-bold text-slate-500 uppercase tracking-widest">Menu Performance</h3>
-            <div className="flex gap-1">
-              <span className="text-[10px] bg-orange-500/10 text-orange-500 px-2 py-0.5 rounded border border-orange-500/20">Top Selling</span>
-            </div>
-          </div>
-
+        <div className="rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
+          <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Menu Performance</h3>
           <div className="space-y-4">
-            <MenuItem
-              name="Caesar Salad"
-              category="Starters"
-              count={205}
-              image="https://images.unsplash.com/photo-1550304943-4f24f54ddde9?auto=format&fit=crop&q=80&w=100&h=100"
-            />
-            <MenuItem
-              name="Truffle Burger"
-              category="Mains"
-              count={102}
-              image="https://images.unsplash.com/photo-1568901346375-23c9450c58cd?auto=format&fit=crop&q=80&w=100&h=100"
-            />
-            <MenuItem
-              name="Spicy Wings"
-              category="Appetizers"
-              count={98}
-              image="https://images.unsplash.com/photo-1608039829572-78524f79c4c7?auto=format&fit=crop&q=80&w=100&h=100"
-            />
+            {menuPerformance.map((item) => (
+              <MenuItem key={item.name} item={item} />
+            ))}
           </div>
         </div>
       </div>
@@ -195,31 +175,47 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-const PantryItem = ({ label, value, color }: any) => (
-  <div className="bg-[#1c1c24] p-4 rounded-2xl border border-white/5">
-    <div className="flex items-center gap-2 mb-2">
-      <span className="text-xs text-slate-400">{label}</span>
+const MetricCard = ({ icon, label, value, subtitle }: { icon: React.ReactNode; label: string; value: string; subtitle: string }) => (
+  <div className="rounded-2xl border border-white/5 bg-[#13131a] p-5 shadow-xl">
+    <div className="mb-4 flex items-center justify-between">
+      <div className="rounded-xl bg-white/5 p-3">{icon}</div>
+      <span className="text-[10px] uppercase tracking-wide text-slate-500">Live</span>
     </div>
-    <div className="flex items-end gap-2 mb-2">
-      <span className="text-2xl font-bold text-white">{value}%</span>
-    </div>
-    <div className="h-1.5 w-full bg-[#27272a] rounded-full overflow-hidden">
-      <div className={`h-full ${color} rounded-full`} style={{ width: `${value}%` }}></div>
-    </div>
+    <p className="text-sm text-slate-400">{label}</p>
+    <p className="mt-1 text-2xl font-bold text-white">{value}</p>
+    <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
   </div>
 );
 
-const MenuItem = ({ name, category, count, image }: any) => (
-  <div className="flex items-center justify-between p-2 hover:bg-white/5 rounded-xl transition-colors cursor-pointer group">
+const PantryItem = ({ label, value, index }: { label: string; value: number; index: number }) => {
+  const colors = ['bg-rose-500', 'bg-orange-500', 'bg-emerald-500', 'bg-blue-500'];
+  return (
+    <div className="rounded-2xl border border-white/5 bg-[#1c1c24] p-4">
+      <p className="text-xs text-slate-400">{label}</p>
+      <div className="mb-2 mt-2 flex items-end gap-2">
+        <span className="text-2xl font-bold text-white">{value}%</span>
+        <span className="pb-1 text-[10px] uppercase tracking-wide text-slate-500">stock ready</span>
+      </div>
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#27272a]">
+        <div className={`h-full rounded-full ${colors[index % colors.length]}`} style={{ width: `${value}%` }} />
+      </div>
+    </div>
+  );
+};
+
+const MenuItem = ({ item }: { item: MenuPerformanceItem }) => (
+  <div className="flex items-center justify-between rounded-xl p-2 transition-colors hover:bg-white/5">
     <div className="flex items-center gap-3">
-      <img src={image} alt={name} className="w-10 h-10 rounded-lg object-cover" />
+      <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-orange-500/10 text-sm font-bold text-orange-400">
+        {item.name.charAt(0)}
+      </div>
       <div>
-        <h4 className="text-sm font-semibold text-white group-hover:text-orange-500 transition-colors">{name}</h4>
-        <p className="text-xs text-slate-500">{category}</p>
+        <h4 className="text-sm font-semibold text-white">{item.name}</h4>
+        <p className="text-xs text-slate-500">{item.category}</p>
       </div>
     </div>
     <div className="text-right">
-      <span className="text-sm font-bold text-white block">{count}</span>
+      <span className="block text-sm font-bold text-white">{item.count}</span>
       <span className="text-[10px] text-slate-500">Orders</span>
     </div>
   </div>

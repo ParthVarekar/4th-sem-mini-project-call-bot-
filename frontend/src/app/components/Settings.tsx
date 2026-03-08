@@ -1,117 +1,116 @@
-import React, { useState } from 'react';
-import { motion } from 'motion/react';
-import { Calendar, Phone, TrendingUp, Mic, Save, Bell, Shield, Volume2 } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Bell, Calendar, Loader2, Mic, Phone, Save, Shield, TrendingUp, Volume2 } from 'lucide-react';
+
+import { AppSettings, settingsService } from '../services/settingsService';
+
+const defaultSettings: AppSettings = {
+  autoReservation: true,
+  autoOrderTaking: false,
+  aiUpselling: true,
+  callRecording: true,
+  voiceType: 'Female - Friendly (Sarah)',
+  maxHoldTime: '2 minutes',
+};
 
 export const Settings: React.FC = () => {
-  const [settings, setSettings] = useState({
-    autoReservation: true,
-    autoOrderTaking: false,
-    aiUpselling: true,
-    callRecording: true,
-    voiceType: 'Female - Friendly',
-    maxHoldTime: '2 minutes'
-  });
+  const [settings, setSettings] = useState<AppSettings>(defaultSettings);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
 
-  const handleToggle = (key: keyof typeof settings) => {
-    setSettings(prev => ({ ...prev, [key]: !prev[key as any] }));
+  useEffect(() => {
+    async function loadSettings() {
+      try {
+        setSettings(await settingsService.fetchSettings());
+      } catch (error) {
+        console.error('Failed to load settings', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadSettings();
+  }, []);
+
+  const handleToggle = (key: keyof Pick<AppSettings, 'autoReservation' | 'autoOrderTaking' | 'aiUpselling' | 'callRecording'>) => {
+    setSettings((current) => ({ ...current, [key]: !current[key] }));
   };
+
+  const handleSave = async () => {
+    setIsSaving(true);
+    try {
+      const saved = await settingsService.saveSettings(settings);
+      setSettings(saved);
+    } catch (error) {
+      console.error('Failed to save settings', error);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[500px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
-      <div className="flex justify-between items-center">
+      <div className="flex items-center justify-between">
         <div>
-           <h1 className="text-2xl font-bold text-white">AI Configuration</h1>
-           <p className="text-slate-400">Manage how your AI assistant handles calls.</p>
+          <h1 className="text-2xl font-bold text-white">AI Configuration</h1>
+          <p className="text-slate-400">Persisted assistant behavior settings for call handling and voice rules.</p>
         </div>
-        <button className="flex items-center space-x-2 px-4 py-2 bg-orange-600 text-white rounded-lg hover:bg-orange-700 transition-colors shadow-sm">
-            <Save className="w-4 h-4" />
-            <span>Save Changes</span>
+        <button onClick={handleSave} disabled={isSaving} className="flex items-center space-x-2 rounded-lg bg-orange-600 px-4 py-2 text-white shadow-sm transition-colors hover:bg-orange-700 disabled:opacity-60">
+          {isSaving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+          <span>{isSaving ? 'Saving...' : 'Save Changes'}</span>
         </button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Core Features */}
-        <div className="bg-[#13131a] rounded-xl border border-white/5 shadow-xl overflow-hidden">
-          <div className="p-6 border-b border-white/5 bg-[#18181b]">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Phone className="w-5 h-5 text-orange-500" />
+      <div className="grid grid-cols-1 gap-8 lg:grid-cols-2">
+        <div className="overflow-hidden rounded-xl border border-white/5 bg-[#13131a] shadow-xl">
+          <div className="border-b border-white/5 bg-[#18181b] p-6">
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
+              <Phone className="h-5 w-5 text-orange-500" />
               Call Handling
             </h3>
-            <p className="text-sm text-slate-500 mt-1">Configure automated responses and actions.</p>
+            <p className="mt-1 text-sm text-slate-500">Configure automated responses and call actions.</p>
           </div>
-          <div className="p-6 space-y-6">
-            <SettingToggle 
-              label="Auto Reservation Mode" 
-              description="Allow AI to check availability and book tables automatically."
-              active={settings.autoReservation}
-              onToggle={() => handleToggle('autoReservation')}
-              icon={<Calendar className="w-5 h-5 text-orange-500" />}
-            />
-            <SettingToggle 
-              label="Auto Order Taking" 
-              description="Enable AI to take food orders and sync with POS."
-              active={settings.autoOrderTaking}
-              onToggle={() => handleToggle('autoOrderTaking')}
-              icon={<Phone className="w-5 h-5 text-orange-500" />}
-            />
-             <SettingToggle 
-              label="AI Upselling Suggestions" 
-              description="Smartly suggest drinks, sides, or desserts during orders."
-              active={settings.aiUpselling}
-              onToggle={() => handleToggle('aiUpselling')}
-              icon={<TrendingUp className="w-5 h-5 text-orange-500" />}
-            />
+          <div className="space-y-6 p-6">
+            <SettingToggle label="Auto Reservation Mode" description="Allow the AI to handle reservation requests automatically." active={settings.autoReservation} onToggle={() => handleToggle('autoReservation')} icon={<Calendar className="h-5 w-5 text-orange-500" />} />
+            <SettingToggle label="Auto Order Taking" description="Enable AI-assisted ordering workflows during inbound calls." active={settings.autoOrderTaking} onToggle={() => handleToggle('autoOrderTaking')} icon={<Phone className="h-5 w-5 text-orange-500" />} />
+            <SettingToggle label="AI Upselling Suggestions" description="Suggest side dishes, drinks, and dessert opportunities during active calls." active={settings.aiUpselling} onToggle={() => handleToggle('aiUpselling')} icon={<TrendingUp className="h-5 w-5 text-orange-500" />} />
           </div>
         </div>
 
-        {/* Voice & Behavior */}
-        <div className="bg-[#13131a] rounded-xl border border-white/5 shadow-xl overflow-hidden">
-          <div className="p-6 border-b border-white/5 bg-[#18181b]">
-            <h3 className="text-lg font-semibold text-white flex items-center gap-2">
-              <Mic className="w-5 h-5 text-orange-500" />
-              Voice & Behavior
+        <div className="overflow-hidden rounded-xl border border-white/5 bg-[#13131a] shadow-xl">
+          <div className="border-b border-white/5 bg-[#18181b] p-6">
+            <h3 className="flex items-center gap-2 text-lg font-semibold text-white">
+              <Mic className="h-5 w-5 text-orange-500" />
+              Voice and Behavior
             </h3>
-            <p className="text-sm text-slate-500 mt-1">Customize the AI's personality and rules.</p>
+            <p className="mt-1 text-sm text-slate-500">Persist the assistant voice persona and guardrails.</p>
           </div>
-          <div className="p-6 space-y-6">
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                <Volume2 className="w-4 h-4 text-slate-500" /> AI Voice Persona
-              </label>
-              <select 
-                className="w-full border border-white/5 rounded-lg shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm p-2.5 bg-[#1c1c24] text-white"
-                value={settings.voiceType}
-                onChange={(e) => setSettings({...settings, voiceType: e.target.value})}
-              >
+          <div className="space-y-6 p-6">
+            <Field label="AI Voice Persona" icon={<Volume2 className="h-4 w-4 text-slate-500" />}>
+              <select value={settings.voiceType} onChange={(event) => setSettings({ ...settings, voiceType: event.target.value })} className="w-full rounded-lg border border-white/5 bg-[#1c1c24] p-2.5 text-sm text-white focus:border-orange-500 focus:outline-none">
                 <option>Female - Friendly (Sarah)</option>
                 <option>Male - Professional (James)</option>
                 <option>Neutral - Efficient (Alex)</option>
               </select>
-            </div>
+            </Field>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-400 mb-2 flex items-center gap-2">
-                <Bell className="w-4 h-4 text-slate-500" /> Max Hold Time
-              </label>
-              <select 
-                className="w-full border border-white/5 rounded-lg shadow-sm focus:border-orange-500 focus:ring-orange-500 sm:text-sm p-2.5 bg-[#1c1c24] text-white"
-                value={settings.maxHoldTime}
-                onChange={(e) => setSettings({...settings, maxHoldTime: e.target.value})}
-              >
+            <Field label="Max Hold Time" icon={<Bell className="h-4 w-4 text-slate-500" />}>
+              <select value={settings.maxHoldTime} onChange={(event) => setSettings({ ...settings, maxHoldTime: event.target.value })} className="w-full rounded-lg border border-white/5 bg-[#1c1c24] p-2.5 text-sm text-white focus:border-orange-500 focus:outline-none">
                 <option>1 minute</option>
                 <option>2 minutes</option>
                 <option>5 minutes</option>
                 <option>Indefinite (Not Recommended)</option>
               </select>
-            </div>
+            </Field>
 
-            <SettingToggle 
-              label="Record All Calls" 
-              description="Save audio and transcripts for quality assurance."
-              active={settings.callRecording}
-              onToggle={() => handleToggle('callRecording')}
-              icon={<Shield className="w-5 h-5 text-orange-500" />}
-            />
+            <SettingToggle label="Record All Calls" description="Save call histories so transcripts and QA records remain available." active={settings.callRecording} onToggle={() => handleToggle('callRecording')} icon={<Shield className="h-5 w-5 text-orange-500" />} />
           </div>
         </div>
       </div>
@@ -119,27 +118,27 @@ export const Settings: React.FC = () => {
   );
 };
 
-const SettingToggle = ({ label, description, active, onToggle, icon }: any) => (
-  <div className="flex items-center justify-between">
+const SettingToggle = ({ label, description, active, onToggle, icon }: { label: string; description: string; active: boolean; onToggle: () => void; icon: React.ReactNode }) => (
+  <div className="flex items-center justify-between gap-4">
     <div className="flex items-start space-x-3">
-      <div className="mt-0.5 p-2 bg-[#1c1c24] rounded-lg hidden sm:block border border-white/5">
-        {icon}
-      </div>
+      <div className="mt-0.5 hidden rounded-lg border border-white/5 bg-[#1c1c24] p-2 sm:block">{icon}</div>
       <div>
-        <span className="text-sm font-medium text-white block">{label}</span>
-        <span className="text-xs text-slate-500 block max-w-xs">{description}</span>
+        <span className="block text-sm font-medium text-white">{label}</span>
+        <span className="block max-w-xs text-xs text-slate-500">{description}</span>
       </div>
     </div>
-    <button 
-      onClick={onToggle}
-      className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-orange-600 focus:ring-offset-2 ${active ? 'bg-orange-600' : 'bg-slate-700'}`}
-      role="switch"
-      aria-checked={active}
-    >
-      <span 
-        aria-hidden="true" 
-        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${active ? 'translate-x-5' : 'translate-x-0'}`} 
-      />
+    <button onClick={onToggle} className={`relative inline-flex h-6 w-11 flex-shrink-0 rounded-full border-2 border-transparent transition-colors duration-200 ${active ? 'bg-orange-600' : 'bg-slate-700'}`} role="switch" aria-checked={active}>
+      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow transition duration-200 ${active ? 'translate-x-5' : 'translate-x-0'}`} />
     </button>
+  </div>
+);
+
+const Field = ({ label, icon, children }: { label: string; icon: React.ReactNode; children: React.ReactNode }) => (
+  <div>
+    <label className="mb-2 flex items-center gap-2 text-sm font-medium text-slate-400">
+      {icon}
+      {label}
+    </label>
+    {children}
   </div>
 );

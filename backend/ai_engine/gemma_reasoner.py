@@ -1,6 +1,6 @@
 """
 Gemma Reasoning Layer
-Sends structured insights to local Ollama (gemma:2b) for business recommendations.
+Sends structured insights to local Ollama (gemma3:1b) for business recommendations.
 Falls back gracefully if Ollama is not available.
 """
 
@@ -65,7 +65,7 @@ def generate_recommendations(insights: dict) -> dict:
         recommendation_text = data.get("response", "")
 
         result = {
-            "source": "gemma:2b",
+            "source": OLLAMA_MODEL,
             "status": "success",
             "recommendations": recommendation_text,
             "structured_insights": insights.get("structured_insights", []),

@@ -1,64 +1,44 @@
-import sys
-import os
 import json
-import time
 
-# Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from backend.services import manager_chat
 
-from backend.app import app
 
-def test_voice_flow():
-    print("[>] Starting Voice Flow Test...")
-    
-    # Create a test client
-    with app.test_client() as client:
-        session_id = "test_user_complete_flow"
-        
-        # Helper to send message
-        def send(msg):
-            print(f"\n[You]: {msg}")
-            payload = {"session_id": session_id, "message": msg}
-            # Add delay to respect Gemini Free Tier rate limits
-            print("...waiting 10s...")
-            time.sleep(10)
-            resp = client.post('/voice/chat', json=payload)
-            if resp.status_code == 200:
-                print(f"[AI]: {resp.json.get('response')}")
-                return resp.json.get('response')
-            else:
-                print(f"[X] Error: {resp.status_code}")
-                return None
+class _FakeOllamaResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
 
-        # Step 1: Greeting
-        send("Hello")
+    def raise_for_status(self):
+        return None
 
-        # Step 2: Intent
-        send("I want to book an appointment for a haircut")
+    def json(self):
+        return {"response": json.dumps(self._payload)}
 
-        # Step 3: Name
-        send("My name is Alice")
-        
-        # Step 4: Date
-        send("I want to come in next Tuesday")
 
-        # Step 5: Time
-        send("At 10 AM")
-        
-        # Step 6: Phone
-        send("My number is 555-0199")
-        
-        # Step 7: Confirmation
-        # The AI should be asking for confirmation now.
-        last_response = send("Yes, that is correct")
-        
-        # Check if console shows extraction logs (manual verification mostly)
-        if last_response and ("process" in last_response.lower() or "confirmed" in last_response.lower()):
-            print("\n[!] success phrase detected. Check server logs for Data Extraction.")
-        else:
-            print("\n[?] Success phrase NOT detected. Conversational flow might be stuck or different.")
+def test_voice_chat_returns_direct_manager_response(client, monkeypatch):
+    def fake_post(*_args, **_kwargs):
+        return _FakeOllamaResponse(
+            {
+                "intent": "holiday_demand_patterns",
+                "reply": (
+                    "Valentine's Day usually brings couples in because dining out feels like a special occasion "
+                    "and gives them an atmosphere they cannot easily recreate at home."
+                ),
+                "data": {"occasion": "Valentine's Day"},
+                "recommendation": "",
+            }
+        )
 
-    print("\n[!] Test Complete!")
+    monkeypatch.setattr(manager_chat.requests, "post", fake_post)
 
-if __name__ == "__main__":
-    test_voice_flow()
+    response = client.post(
+        "/voice/chat",
+        json={"session_id": "voice-test", "message": "why do couples come to my restaurant on valentine's day?"},
+    )
+
+    assert response.status_code == 200
+    body = response.get_json()
+    assert body["status"] == "success"
+    assert body["data"]["response"]["intent"] == "holiday_demand_patterns"
+    assert body["data"]["response"]["reply"]
+    assert "The user is asking" not in body["data"]["response"]["reply"]
+    assert body["data"]["response"]["recommendation"] == ""

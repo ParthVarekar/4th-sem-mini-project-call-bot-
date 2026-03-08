@@ -1,46 +1,69 @@
-import { apiClient, ApiResponse } from './apiClient';
-import { ComboMeal, comboMeals as mockComboMeals } from './mockData';
+import { ApiResponse, apiClient } from './apiClient';
+
+export interface ComboMeal {
+  id: number;
+  name: string;
+  items: string[];
+  price: number;
+  discount: number;
+  popularity: number;
+  revenue: number;
+  timesOrdered: number;
+  targetAudience: string;
+  active: boolean;
+}
 
 export interface RepeatCustomer {
-    id: number;
-    name: string;
-    orders: number;
-    suggestedCombo: string;
-    orderHistory: string[];
-    potentialRevenue: number;
+  id: number;
+  name: string;
+  orders: number;
+  suggestedCombo: string;
+  orderHistory: string[];
+  potentialRevenue: number;
 }
 
 export interface ComboData {
-    combos: ComboMeal[];
-    repeatCustomers: RepeatCustomer[];
-    availableItems: string[];
+  combos: ComboMeal[];
+  repeatCustomers: RepeatCustomer[];
+  availableItems: string[];
+}
+
+export interface ComboPayload {
+  id?: number;
+  name: string;
+  items: string[];
+  price: number;
+  discount: number;
+  targetAudience: string;
+  active?: boolean;
+  popularity?: number;
+  revenue?: number;
+  timesOrdered?: number;
 }
 
 export const comboService = {
-    async fetchComboData(): Promise<ComboData> {
-        try {
-            const response = await apiClient.get<ApiResponse>('/api/combos');
-            if (response.data.status === 'success') {
-                return {
-                    combos: response.data.data.combos || [],
-                    repeatCustomers: response.data.data.repeatCustomers || [],
-                    availableItems: response.data.data.availableItems || []
-                };
-            }
-            throw new Error(response.data.message || 'Failed to fetch combos');
-        } catch (error) {
-            console.error('Failed to fetch combos, using fallback data.', error);
-            return { combos: [], repeatCustomers: [], availableItems: [] };
-        }
-    },
-
-    async updateCombo(combo: ComboMeal): Promise<boolean> {
-        try {
-            const response = await apiClient.post<ApiResponse>('/api/combos', combo);
-            return response.data.status === 'success';
-        } catch (error) {
-            console.error('Failed to update combo.', error);
-            return false;
-        }
+  async fetchComboData(): Promise<ComboData> {
+    const response = await apiClient.get<ApiResponse>('/api/combos');
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Failed to fetch combos');
     }
+
+    return {
+      combos: response.data.data.combos || [],
+      repeatCustomers: response.data.data.repeatCustomers || [],
+      availableItems: response.data.data.availableItems || [],
+    };
+  },
+
+  async saveCombo(payload: ComboPayload): Promise<ComboMeal> {
+    const response = payload.id
+      ? await apiClient.patch<ApiResponse>(`/api/combos/${payload.id}`, payload)
+      : await apiClient.post<ApiResponse>('/api/combos', payload);
+
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Failed to save combo');
+    }
+
+    return response.data.data.combo;
+  },
 };

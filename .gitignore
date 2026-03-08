@@ -11,6 +11,7 @@ __pycache__/
 .Python
 env/
 venv/
+.venv/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -41,4 +42,5 @@ Thumbs.db
 # Project specific
 backend/data/
 frontend/node_modules/
-anti-gravity/ (if it is agent-specific)
+frontend/vite-dev*.log
+anti-gravity/

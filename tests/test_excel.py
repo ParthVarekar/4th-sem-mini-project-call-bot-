@@ -1,48 +1,21 @@
-import sys
-import os
+def test_dashboard_and_mutation_endpoints(client):
+    analytics_response = client.get('/api/analytics')
+    assert analytics_response.status_code == 200
+    assert analytics_response.get_json()['status'] == 'success'
 
-# Add project root to path
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+    inventory_response = client.get('/api/inventory')
+    assert inventory_response.status_code == 200
+    assert inventory_response.get_json()['data']['pantryBreakdown']
 
-from backend.services.excel_writer import excel_service
+    settings_response = client.put('/api/settings', json={'autoOrderTaking': True, 'maxHoldTime': '5 minutes'})
+    assert settings_response.status_code == 200
+    assert settings_response.get_json()['data']['settings']['autoOrderTaking'] is True
 
-def test_excel_writer():
-    print("[>] Testing Excel Writer Service...")
-    
-    # Test Appointment
-    appt_data = {
-        "Name": "John Doe",
-        "Phone": "+1234567890",
-        "Service": "Haircut",
-        "Date": "2023-10-27",
-        "Time": "10:00 AM"
-    }
-    
-    print(f"\n[>] Saving Appointment: {appt_data}")
-    success = excel_service.save_appointment(appt_data)
-    
-    if success:
-        print("[OK] Appointment saved successfully.")
-    else:
-        print("[X] Failed to save appointment.")
+    discount_response = client.post('/api/rewards/discounts', json={'name': 'Pytest Discount', 'type': 'Percentage', 'value': '12', 'conditions': 'All customers', 'usageLimit': '10'})
+    assert discount_response.status_code == 201
 
-    # Test Order
-    order_data = {
-        "Product": "Pizza",
-        "Quantity": 2,
-        "Address": "123 Main St",
-        "Phone": "+1987654321"
-    }
-    
-    print(f"\n[>] Saving Order: {order_data}")
-    success = excel_service.save_order(order_data)
-    
-    if success:
-        print("[OK] Order saved successfully.")
-    else:
-        print("[X] Failed to save order.")
+    combo_response = client.post('/api/combos', json={'name': 'Pytest Combo', 'items': ['Classic Burger', 'Fries'], 'price': 14.5, 'discount': 10, 'targetAudience': 'Testers'})
+    assert combo_response.status_code == 201
 
-    print("\n[!] Please check data/appointments.xlsx and data/orders.xlsx to verify contents.")
-
-if __name__ == "__main__":
-    test_excel_writer()
+    holiday_response = client.post('/api/holidays', json={'name': 'Pytest Holiday', 'date': '2026-12-31', 'openingTime': '09:00', 'closingTime': '20:00', 'promotion': 'Test event promo'})
+    assert holiday_response.status_code == 201

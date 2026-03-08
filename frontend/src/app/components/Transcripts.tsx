@@ -1,182 +1,179 @@
-import React, { useState } from 'react';
-import { Phone, Clock, User, MessageSquare, Play, Pause, MoreVertical, Search, CheckCircle } from 'lucide-react';
-import { motion, AnimatePresence } from 'motion/react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Clock, Loader2, MessageSquare, MoreVertical, Pause, Play, Search } from 'lucide-react';
+import { motion } from 'motion/react';
+
 import { FrequentCustomerTracker } from './FrequentCustomerTracker';
+import { TranscriptCall, transcriptsService } from '../services/transcriptsService';
 
-interface Call {
-  id: number;
-  customer: string;
-  phone: string;
-  time: string;
-  duration: string;
-  status: string;
-  type: string;
-  callCount?: number;
-  tier?: 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
-}
-
-const calls: Call[] = [
-  { id: 1, customer: 'John Doe', phone: '(555) 123-4567', time: '10:30 AM', duration: '2:15', status: 'Completed', type: 'Reservation', callCount: 8, tier: 'Bronze' },
-  { id: 2, customer: 'Sarah Smith', phone: '(555) 234-5678', time: '11:45 AM', duration: '1:45', status: 'Missed', type: 'Inquiry', callCount: 24, tier: 'Gold' },
-  { id: 3, customer: 'Mike Johnson', phone: '(555) 345-6789', time: '12:15 PM', duration: '3:30', status: 'Completed', type: 'Order', callCount: 15, tier: 'Silver' },
-  { id: 4, customer: 'Emily Davis', phone: '(555) 456-7890', time: '1:00 PM', duration: '0:50', status: 'Completed', type: 'Complaint', callCount: 35, tier: 'Platinum' },
-  { id: 5, customer: 'Chris Wilson', phone: '(555) 567-8901', time: '2:30 PM', duration: '4:10', status: 'Completed', type: 'Order' },
-];
-
-const getDiscountForTier = (tier?: 'Bronze' | 'Silver' | 'Gold' | 'Platinum'): number => {
+const getDiscountForTier = (tier: TranscriptCall['tier']): number => {
   switch (tier) {
-    case 'Bronze': return 5;
-    case 'Silver': return 10;
-    case 'Gold': return 15;
-    case 'Platinum': return 20;
-    default: return 0;
+    case 'Platinum':
+      return 20;
+    case 'Gold':
+      return 15;
+    case 'Silver':
+      return 10;
+    default:
+      return 5;
   }
 };
 
-const transcript = [
-  { sender: 'AI', text: 'Hello, thanks for calling The Gourmet Kitchen. How can I help you today?', time: '10:30 AM' },
-  { sender: 'Customer', text: 'Hi, I’d like to make a reservation for two people tonight.', time: '10:30 AM' },
-  { sender: 'AI', text: 'Certainly! What time would you prefer?', time: '10:31 AM' },
-  { sender: 'Customer', text: 'Around 7:00 PM if possible.', time: '10:31 AM' },
-  { sender: 'AI', text: 'I have a table available at 7:15 PM. Would that work for you?', time: '10:31 AM' },
-  { sender: 'Customer', text: 'Yes, that’s perfect.', time: '10:32 AM' },
-  { sender: 'AI', text: 'Great! I have booked a table for two at 7:15 PM under your phone number. Is there anything else?', time: '10:32 AM' },
-  { sender: 'Customer', text: 'No, that’s all. Thanks!', time: '10:32 AM' },
-];
-
 export const Transcripts: React.FC = () => {
-  const [selectedCall, setSelectedCall] = useState<number | null>(1);
+  const [calls, setCalls] = useState<TranscriptCall[]>([]);
+  const [search, setSearch] = useState('');
+  const [selectedCall, setSelectedCall] = useState<number | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const selectedCallData = calls.find(c => c.id === selectedCall);
+  useEffect(() => {
+    async function loadTranscripts() {
+      try {
+        const result = await transcriptsService.fetchTranscripts();
+        setCalls(result);
+        setSelectedCall(result[0]?.id || null);
+      } catch (error) {
+        console.error('Failed to load transcripts', error);
+      } finally {
+        setIsLoading(false);
+      }
+    }
+
+    loadTranscripts();
+  }, []);
+
+  const filteredCalls = useMemo(() => {
+    const query = search.toLowerCase().trim();
+    if (!query) {
+      return calls;
+    }
+    return calls.filter((call) => {
+      return [call.customer, call.phone, call.type, call.summary].some((value) => value.toLowerCase().includes(query));
+    });
+  }, [calls, search]);
+
+  const selectedCallData = filteredCalls.find((call) => call.id === selectedCall) || calls.find((call) => call.id === selectedCall) || null;
+
+  if (isLoading) {
+    return (
+      <div className="flex min-h-[500px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
+      </div>
+    );
+  }
 
   return (
-    <div className="h-[calc(100vh-8rem)] flex flex-col md:flex-row gap-6">
-      {/* Call List */}
-      <div className="w-full md:w-1/3 bg-[#13131a] rounded-xl border border-white/5 shadow-xl flex flex-col overflow-hidden">
-        <div className="p-4 border-b border-white/5">
-          <h2 className="font-bold text-white mb-4">Recent Calls</h2>
+    <div className="flex h-[calc(100vh-8rem)] flex-col gap-6 md:flex-row">
+      <div className="flex w-full flex-col overflow-hidden rounded-xl border border-white/5 bg-[#13131a] shadow-xl md:w-1/3">
+        <div className="border-b border-white/5 p-4">
+          <h2 className="mb-4 font-bold text-white">Recent Calls</h2>
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-slate-500 w-4 h-4" />
-            <input 
-              type="text" 
-              placeholder="Search transcripts..." 
-              className="w-full pl-9 pr-4 py-2 bg-[#1c1c24] border border-white/5 rounded-lg text-sm text-slate-300 focus:ring-orange-500 focus:border-orange-500 placeholder-slate-600"
+            <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-500" />
+            <input
+              type="text"
+              value={search}
+              onChange={(event) => setSearch(event.target.value)}
+              placeholder="Search transcripts..."
+              className="w-full rounded-lg border border-white/5 bg-[#1c1c24] py-2 pl-9 pr-4 text-sm text-slate-300 placeholder-slate-600 focus:border-orange-500 focus:outline-none"
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto">
-          {calls.map((call) => (
-            <div 
+          {filteredCalls.map((call) => (
+            <button
               key={call.id}
               onClick={() => setSelectedCall(call.id)}
-              className={`p-4 border-b border-white/5 hover:bg-white/5 cursor-pointer transition-colors ${selectedCall === call.id ? 'bg-orange-500/10 border-l-4 border-l-orange-500' : 'border-l-4 border-l-transparent'}`}
+              className={`w-full border-b border-white/5 p-4 text-left transition-colors hover:bg-white/5 ${selectedCall === call.id ? 'border-l-4 border-l-orange-500 bg-orange-500/10' : 'border-l-4 border-l-transparent'}`}
             >
-              <div className="flex justify-between items-start mb-1">
-                <span className="font-semibold text-slate-200 text-sm">{call.customer}</span>
+              <div className="mb-1 flex items-start justify-between">
+                <span className="text-sm font-semibold text-slate-200">{call.customer}</span>
                 <span className="text-xs text-slate-500">{call.time}</span>
               </div>
-              <div className="flex justify-between items-center">
-                 <div className="flex items-center gap-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${call.status === 'Missed' ? 'bg-rose-500/10 text-rose-500' : 'bg-emerald-500/10 text-emerald-500'}`}>
-                      {call.status}
-                    </span>
-                    <span className="text-xs text-slate-500">• {call.type}</span>
-                 </div>
-                 <span className="text-xs text-slate-500 flex items-center gap-1">
-                   <Clock className="w-3 h-3" /> {call.duration}
-                 </span>
+              <div className="mb-2 flex flex-wrap items-center gap-2 text-xs text-slate-500">
+                <span className={`rounded px-2 py-0.5 font-medium ${call.status === 'Missed' ? 'bg-rose-500/10 text-rose-400' : 'bg-emerald-500/10 text-emerald-400'}`}>
+                  {call.status}
+                </span>
+                <span>{call.type}</span>
+                <span>{call.summary}</span>
               </div>
-            </div>
+              <span className="flex items-center gap-1 text-xs text-slate-500">
+                <Clock className="h-3 w-3" /> {call.duration}
+              </span>
+            </button>
           ))}
         </div>
       </div>
 
-      {/* Transcript View */}
-      <div className="w-full md:w-2/3 bg-[#13131a] rounded-xl border border-white/5 shadow-xl flex flex-col overflow-hidden relative">
-        {selectedCall ? (
+      <div className="relative flex w-full flex-col overflow-hidden rounded-xl border border-white/5 bg-[#13131a] shadow-xl md:w-2/3">
+        {selectedCallData ? (
           <>
-            {/* Header */}
-            <div className="p-4 border-b border-white/5 bg-[#18181b] space-y-3">
-              <div className="flex justify-between items-center">
+            <div className="space-y-3 border-b border-white/5 bg-[#18181b] p-4">
+              <div className="flex items-center justify-between">
                 <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-full bg-orange-500/20 flex items-center justify-center text-orange-500 font-bold border border-orange-500/30">
-                    {selectedCallData?.customer.charAt(0)}
+                  <div className="flex h-10 w-10 items-center justify-center rounded-full border border-orange-500/30 bg-orange-500/20 font-bold text-orange-500">
+                    {selectedCallData.customer.charAt(0)}
                   </div>
                   <div>
-                    <h3 className="font-bold text-white">{selectedCallData?.customer}</h3>
-                    <p className="text-xs text-slate-500">Recorded on {selectedCallData?.time}</p>
+                    <h3 className="font-bold text-white">{selectedCallData.customer}</h3>
+                    <p className="text-xs text-slate-500">Recorded at {selectedCallData.time}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button 
-                    onClick={() => setIsPlaying(!isPlaying)}
-                    className="p-2 rounded-full hover:bg-white/5 text-slate-400 transition-colors"
-                  >
-                    {isPlaying ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                  <button onClick={() => setIsPlaying((current) => !current)} className="rounded-full p-2 text-slate-400 transition-colors hover:bg-white/5">
+                    {isPlaying ? <Pause className="h-5 w-5" /> : <Play className="h-5 w-5" />}
                   </button>
-                  <button className="p-2 rounded-full hover:bg-white/5 text-slate-400 transition-colors">
-                    <MoreVertical className="w-5 h-5" />
+                  <button className="rounded-full p-2 text-slate-400 transition-colors hover:bg-white/5">
+                    <MoreVertical className="h-5 w-5" />
                   </button>
                 </div>
               </div>
 
-              {/* Frequent Customer Badge */}
-              {selectedCallData?.tier && selectedCallData?.callCount && (
-                <FrequentCustomerTracker 
-                  customer={{
-                    phone: selectedCallData.phone,
-                    name: selectedCallData.customer,
-                    callCount: selectedCallData.callCount,
-                    tier: selectedCallData.tier,
-                    discount: getDiscountForTier(selectedCallData.tier),
-                    autoApply: true,
-                    nextTierCalls: selectedCallData.tier === 'Platinum' ? 0 : (10 - (selectedCallData.callCount % 10))
-                  }}
-                  compact={true}
-                />
-              )}
+              <FrequentCustomerTracker
+                customer={{
+                  phone: selectedCallData.phone,
+                  name: selectedCallData.customer,
+                  callCount: selectedCallData.callCount,
+                  tier: selectedCallData.tier,
+                  discount: getDiscountForTier(selectedCallData.tier),
+                  autoApply: true,
+                  nextTierCalls: selectedCallData.tier === 'Platinum' ? 0 : Math.max(0, 10 - (selectedCallData.callCount % 10)),
+                }}
+                compact
+              />
             </div>
 
-            {/* Chat Area */}
-            <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-[#0f1115]/50">
-              {transcript.map((msg, idx) => (
-                <motion.div 
-                  key={idx}
+            <div className="flex-1 space-y-6 overflow-y-auto bg-[#0f1115]/50 p-6">
+              {selectedCallData.messages.map((message, index) => (
+                <motion.div
+                  key={`${message.sender}-${index}`}
                   initial={{ opacity: 0, y: 10 }}
                   animate={{ opacity: 1, y: 0 }}
-                  transition={{ delay: idx * 0.1 }}
-                  className={`flex ${msg.sender === 'AI' ? 'justify-start' : 'justify-end'}`}
+                  transition={{ delay: index * 0.05 }}
+                  className={`flex ${message.sender === 'AI' ? 'justify-start' : 'justify-end'}`}
                 >
-                  <div className={`max-w-[80%] rounded-2xl p-4 shadow-sm ${
-                    msg.sender === 'AI' 
-                      ? 'bg-[#1c1c24] border border-white/5 text-slate-300 rounded-tl-none' 
-                      : 'bg-orange-600 text-white rounded-tr-none'
-                  }`}>
-                    <p className="text-sm leading-relaxed">{msg.text}</p>
-                    <p className={`text-[10px] mt-2 opacity-70 ${msg.sender === 'AI' ? 'text-slate-500' : 'text-orange-200'}`}>
-                      {msg.sender} • {msg.time}
+                  <div className={`max-w-[80%] rounded-2xl p-4 shadow-sm ${message.sender === 'AI' ? 'rounded-tl-none border border-white/5 bg-[#1c1c24] text-slate-300' : 'rounded-tr-none bg-orange-600 text-white'}`}>
+                    <p className="text-sm leading-relaxed">{message.text}</p>
+                    <p className={`mt-2 text-[10px] opacity-70 ${message.sender === 'AI' ? 'text-slate-500' : 'text-orange-200'}`}>
+                      {message.sender} - {message.time}
                     </p>
                   </div>
                 </motion.div>
               ))}
             </div>
 
-            {/* Audio Player Bar */}
-            <div className="p-4 border-t border-white/5 bg-[#13131a]">
-               <div className="flex items-center gap-3">
-                 <span className="text-xs text-slate-500 font-mono">00:15</span>
-                 <div className="flex-1 h-1.5 bg-[#27272a] rounded-full overflow-hidden">
-                   <div className="h-full bg-orange-500 w-1/4 rounded-full"></div>
-                 </div>
-                 <span className="text-xs text-slate-500 font-mono">02:15</span>
-               </div>
+            <div className="border-t border-white/5 bg-[#13131a] p-4">
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-slate-500">00:15</span>
+                <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-[#27272a]">
+                  <div className="h-full w-1/3 rounded-full bg-orange-500" />
+                </div>
+                <span className="font-mono text-xs text-slate-500">{selectedCallData.duration}</span>
+              </div>
             </div>
           </>
         ) : (
-          <div className="flex-1 flex items-center justify-center text-slate-600 flex-col gap-4">
-            <MessageSquare className="w-12 h-12 opacity-20" />
-            <p>Select a call to view transcript</p>
+          <div className="flex flex-1 flex-col items-center justify-center gap-4 text-slate-600">
+            <MessageSquare className="h-12 w-12 opacity-20" />
+            <p>Select a call to view its transcript.</p>
           </div>
         )}
       </div>

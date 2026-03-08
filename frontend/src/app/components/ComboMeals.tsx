@@ -1,49 +1,13 @@
-import React, { useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { motion } from 'motion/react';
-import {
-  UtensilsCrossed,
-  TrendingUp,
-  Users,
-  DollarSign,
-  Plus,
-  Edit,
-  Star,
-  CheckCircle,
-  Package,
-  Loader2
-} from 'lucide-react';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from './ui/dialog';
-import { comboService } from '../services/comboService';
+import { CheckCircle, DollarSign, Loader2, Package, Plus, Star, TrendingUp, Users } from 'lucide-react';
 
-interface ComboMeal {
-  id: number;
-  name: string;
-  items: string[];
-  price: number;
-  discount: number;
-  popularity: number;
-  revenue: number;
-  timesOrdered: number;
-  targetAudience: string;
-  active: boolean;
-}
-
-
-
-interface Customer {
-  id: number;
-  name: string;
-  orders: number;
-  suggestedCombo: string;
-  orderHistory: string[];
-  potentialRevenue: number;
-}
-
-
+import { comboService, ComboMeal, ComboPayload, RepeatCustomer } from '../services/comboService';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from './ui/dialog';
 
 export const ComboMeals: React.FC = () => {
   const [combos, setCombos] = useState<ComboMeal[]>([]);
-  const [repeatCustomers, setRepeatCustomers] = useState<Customer[]>([]);
+  const [repeatCustomers, setRepeatCustomers] = useState<RepeatCustomer[]>([]);
   const [availableMenuItems, setAvailableMenuItems] = useState<string[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [showNewCombo, setShowNewCombo] = useState(false);
@@ -55,12 +19,12 @@ export const ComboMeals: React.FC = () => {
     targetAudience: '',
   });
 
-  React.useEffect(() => {
+  useEffect(() => {
     async function loadCombos() {
       try {
         const data = await comboService.fetchComboData();
-        setCombos(data.combos as any as ComboMeal[]);
-        setRepeatCustomers(data.repeatCustomers as any as Customer[]);
+        setCombos(data.combos);
+        setRepeatCustomers(data.repeatCustomers);
         setAvailableMenuItems(data.availableItems || []);
       } catch (error) {
         console.error(error);
@@ -68,198 +32,127 @@ export const ComboMeals: React.FC = () => {
         setIsLoading(false);
       }
     }
+
     loadCombos();
   }, []);
 
+  const totalRevenue = useMemo(() => combos.reduce((sum, combo) => sum + combo.revenue, 0), [combos]);
+  const totalOrders = useMemo(() => combos.reduce((sum, combo) => sum + combo.timesOrdered, 0), [combos]);
+  const averagePopularity = useMemo(() => {
+    if (!combos.length) return 0;
+    return Math.round(combos.reduce((sum, combo) => sum + combo.popularity, 0) / combos.length);
+  }, [combos]);
+
   const toggleItem = (item: string) => {
-    setSelectedItems((prev) =>
-      prev.includes(item) ? prev.filter((i) => i !== item) : [...prev, item]
-    );
+    setSelectedItems((current) => current.includes(item) ? current.filter((entry) => entry !== item) : [...current, item]);
   };
 
-  const handleSubmitCombo = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (selectedItems.length === 0) return;
+  const handleSubmitCombo = async (event: React.FormEvent) => {
+    event.preventDefault();
+    if (!selectedItems.length) return;
 
-    const price = parseFloat(formData.price);
-    const discount = parseInt(formData.discount) || 0;
-    const mockRevenue = Math.round(price * (20 + Math.random() * 30));
-
-    const newCombo: ComboMeal = {
-      id: Date.now(),
+    const payload: ComboPayload = {
       name: formData.name,
       items: selectedItems,
-      price,
-      discount,
-      popularity: Math.round(50 + Math.random() * 40),
-      revenue: mockRevenue,
-      timesOrdered: 0,
+      price: parseFloat(formData.price),
+      discount: parseInt(formData.discount || '0', 10),
       targetAudience: formData.targetAudience || 'All customers',
       active: true,
     };
-    setCombos((prev) => [...prev, newCombo]);
-    setShowNewCombo(false);
-    setFormData({ name: '', price: '', discount: '', targetAudience: '' });
-    setSelectedItems([]);
+
+    try {
+      const combo = await comboService.saveCombo(payload);
+      setCombos((current) => [...current.filter((entry) => entry.id !== combo.id), combo].sort((left, right) => left.id - right.id));
+      setShowNewCombo(false);
+      setSelectedItems([]);
+      setFormData({ name: '', price: '', discount: '', targetAudience: '' });
+    } catch (error) {
+      console.error('Failed to save combo', error);
+    }
   };
 
-  const calculateTotalRevenue = () => {
-    return combos.reduce((sum, combo) => sum + combo.revenue, 0);
-  };
-
-  const calculateTotalOrders = () => {
-    return combos.reduce((sum, combo) => sum + (combo.timesOrdered || 0), 0);
+  const handleToggleCombo = async (combo: ComboMeal) => {
+    try {
+      const updated = await comboService.saveCombo({ ...combo, active: !combo.active });
+      setCombos((current) => current.map((entry) => entry.id === updated.id ? updated : entry));
+    } catch (error) {
+      console.error('Failed to update combo', error);
+    }
   };
 
   if (isLoading) {
     return (
-      <div className="flex items-center justify-center h-full min-h-[500px]">
-        <Loader2 className="w-8 h-8 text-orange-500 animate-spin" />
+      <div className="flex min-h-[500px] items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-orange-500" />
       </div>
     );
   }
 
   return (
     <div className="space-y-6">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="flex flex-col justify-between gap-4 sm:flex-row sm:items-center">
         <div>
-          <h1 className="text-2xl font-bold text-white flex items-center gap-2">
-            <UtensilsCrossed className="w-6 h-6 text-orange-500" />
+          <h1 className="flex items-center gap-2 text-2xl font-bold text-white">
+            <Package className="h-6 w-6 text-orange-500" />
             Combo Meal Manager
           </h1>
-          <p className="text-slate-400">Create and optimize combo deals for repeat customers</p>
+          <p className="text-slate-400">Persisted combo bundles plus AI suggestions for your best repeat customers.</p>
         </div>
-        <button
-          onClick={() => setShowNewCombo(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" />
+        <button onClick={() => setShowNewCombo(true)} className="flex items-center gap-2 rounded-lg bg-orange-500 px-4 py-2 font-medium text-white transition-colors hover:bg-orange-600">
+          <Plus className="h-4 w-4" />
           Create Combo
         </button>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-[#13131a] border border-white/5 rounded-xl p-5"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-orange-500/10 rounded-lg">
-              <Package className="w-5 h-5 text-orange-400" />
-            </div>
-            <span className="text-xs text-orange-400 font-medium">Active</span>
-          </div>
-          <p className="text-2xl font-bold text-white">{combos.length}</p>
-          <p className="text-sm text-slate-400">Active Combos</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 }}
-          className="bg-[#13131a] border border-white/5 rounded-xl p-5"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-emerald-500/10 rounded-lg">
-              <DollarSign className="w-5 h-5 text-emerald-400" />
-            </div>
-            <span className="text-xs text-emerald-400 font-medium">+22%</span>
-          </div>
-          <p className="text-2xl font-bold text-white">${(calculateTotalRevenue() / 1000).toFixed(1)}K</p>
-          <p className="text-sm text-slate-400">Combo Revenue</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.2 }}
-          className="bg-[#13131a] border border-white/5 rounded-xl p-5"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-purple-500/10 rounded-lg">
-              <Users className="w-5 h-5 text-purple-400" />
-            </div>
-            <span className="text-xs text-purple-400 font-medium">This Month</span>
-          </div>
-          <p className="text-2xl font-bold text-white">{calculateTotalOrders()}</p>
-          <p className="text-sm text-slate-400">Times Ordered</p>
-        </motion.div>
-
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.3 }}
-          className="bg-[#13131a] border border-white/5 rounded-xl p-5"
-        >
-          <div className="flex items-center justify-between mb-3">
-            <div className="p-2 bg-rose-500/10 rounded-lg">
-              <Star className="w-5 h-5 text-rose-400" />
-            </div>
-            <span className="text-xs text-rose-400 font-medium">Avg</span>
-          </div>
-          <p className="text-2xl font-bold text-white">86%</p>
-          <p className="text-sm text-slate-400">Customer Rating</p>
-        </motion.div>
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-4">
+        <StatCard icon={<Package className="h-5 w-5 text-orange-400" />} label="Active Combos" value={String(combos.filter((combo) => combo.active).length)} />
+        <StatCard icon={<DollarSign className="h-5 w-5 text-emerald-400" />} label="Combo Revenue" value={`$${(totalRevenue / 1000).toFixed(1)}K`} />
+        <StatCard icon={<Users className="h-5 w-5 text-purple-400" />} label="Times Ordered" value={String(totalOrders)} />
+        <StatCard icon={<Star className="h-5 w-5 text-rose-400" />} label="Avg Popularity" value={`${averagePopularity}%`} />
       </div>
 
-      {/* Combo Meals Grid */}
-      <div className="bg-[#13131a] border border-white/5 rounded-xl p-6">
-        <h2 className="text-lg font-bold text-white mb-4">Active Combo Deals</h2>
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-          {combos.map((combo, idx) => (
-            <motion.div
-              key={combo.id || `combo-${idx}`}
-              initial={{ opacity: 0, scale: 0.95 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: idx * 0.05 }}
-              className="p-5 rounded-xl bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
-            >
-              <div className="flex items-start justify-between mb-3">
-                <div className="flex-1">
-                  <h3 className="font-bold text-white mb-1">{combo.name}</h3>
+      <div className="rounded-xl border border-white/5 bg-[#13131a] p-6">
+        <h2 className="mb-4 text-lg font-bold text-white">Active Combo Deals</h2>
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          {combos.map((combo) => (
+            <motion.div key={combo.id} initial={{ opacity: 0, scale: 0.98 }} animate={{ opacity: 1, scale: 1 }} className="rounded-xl border border-white/10 bg-white/5 p-5 transition-all hover:bg-white/10">
+              <div className="mb-3 flex items-start justify-between gap-3">
+                <div>
+                  <h3 className="font-bold text-white">{combo.name}</h3>
                   <p className="text-xs text-slate-400">{combo.targetAudience}</p>
                 </div>
-                <button className="p-1.5 hover:bg-white/10 rounded text-slate-400 hover:text-white transition-colors">
-                  <Edit className="w-4 h-4" />
+                <button onClick={() => handleToggleCombo(combo)} className={`rounded-full px-3 py-1 text-xs font-medium ${combo.active ? 'bg-emerald-500/15 text-emerald-400' : 'bg-slate-500/15 text-slate-400'}`}>
+                  {combo.active ? 'Active' : 'Paused'}
                 </button>
               </div>
 
-              <div className="space-y-1.5 mb-4">
-                {combo.items.map((item, i) => (
-                  <div key={i} className="flex items-center gap-2 text-xs text-slate-300">
-                    <CheckCircle className="w-3 h-3 text-emerald-500" />
+              <div className="mb-4 space-y-1.5">
+                {combo.items.map((item) => (
+                  <div key={item} className="flex items-center gap-2 text-xs text-slate-300">
+                    <CheckCircle className="h-3 w-3 text-emerald-500" />
                     {item}
                   </div>
                 ))}
               </div>
 
-              <div className="flex items-center justify-between pt-3 border-t border-white/10">
+              <div className="flex items-center justify-between border-t border-white/10 pt-3">
                 <div className="flex items-center gap-3">
-                  <span className="text-lg font-bold text-white">${combo.price}</span>
-                  <span className="px-2 py-0.5 bg-emerald-500/20 text-emerald-400 rounded text-xs font-bold">
-                    {combo.discount}% OFF
-                  </span>
+                  <span className="text-lg font-bold text-white">${combo.price.toFixed(2)}</span>
+                  <span className="rounded bg-emerald-500/20 px-2 py-0.5 text-xs font-bold text-emerald-400">{combo.discount}% OFF</span>
                 </div>
-                <div className="text-right">
-                  <p className="text-xs text-slate-400">{combo.timesOrdered} orders</p>
-                  <p className="text-xs font-semibold text-emerald-400">${combo.revenue}</p>
+                <div className="text-right text-xs text-slate-400">
+                  <p>{combo.timesOrdered} orders</p>
+                  <p className="font-semibold text-emerald-400">${combo.revenue}</p>
                 </div>
               </div>
 
-              {/* Popularity Bar */}
               <div className="mt-3">
-                <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs text-slate-500">Popularity</span>
-                  <span className="text-xs font-semibold text-orange-400">{combo.popularity}%</span>
+                <div className="mb-1 flex items-center justify-between text-xs">
+                  <span className="text-slate-500">Popularity</span>
+                  <span className="font-semibold text-orange-400">{combo.popularity}%</span>
                 </div>
-                <div className="w-full h-1.5 bg-white/10 rounded-full overflow-hidden">
-                  <div
-                    className="h-full bg-gradient-to-r from-orange-500 to-rose-500 rounded-full"
-                    style={{ width: `${combo.popularity}%` }}
-                  />
+                <div className="h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                  <div className="h-full rounded-full bg-gradient-to-r from-orange-500 to-rose-500" style={{ width: `${combo.popularity}%` }} />
                 </div>
               </div>
             </motion.div>
@@ -267,45 +160,30 @@ export const ComboMeals: React.FC = () => {
         </div>
       </div>
 
-      {/* AI Recommendations for Repeat Customers */}
-      <div className="bg-[#13131a] border border-white/5 rounded-xl p-6">
-        <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-          <TrendingUp className="w-5 h-5 text-orange-500" />
+      <div className="rounded-xl border border-white/5 bg-[#13131a] p-6">
+        <h2 className="mb-4 flex items-center gap-2 text-lg font-bold text-white">
+          <TrendingUp className="h-5 w-5 text-orange-500" />
           AI-Suggested Combos for Repeat Customers
         </h2>
         <div className="space-y-3">
           {repeatCustomers.map((customer) => (
-            <div
-              key={customer.id}
-              className="p-4 rounded-lg bg-white/5 border border-white/10 hover:bg-white/10 transition-all"
-            >
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div key={customer.id} className="rounded-lg border border-white/10 bg-white/5 p-4 transition-all hover:bg-white/10">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-2">
+                  <div className="mb-2 flex items-center gap-2">
                     <h3 className="font-semibold text-white">{customer.name}</h3>
-                    <span className="px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded text-xs font-medium">
-                      {customer.orders} orders
-                    </span>
+                    <span className="rounded bg-purple-500/20 px-2 py-0.5 text-xs font-medium text-purple-400">{customer.orders} orders</span>
                   </div>
-                  <div className="flex flex-wrap gap-1.5 mb-2">
-                    {customer.orderHistory.map((item, i) => (
-                      <span key={i} className="px-2 py-0.5 bg-white/5 text-slate-400 rounded text-xs">
-                        {item}
-                      </span>
+                  <div className="mb-2 flex flex-wrap gap-1.5">
+                    {customer.orderHistory.map((item) => (
+                      <span key={item} className="rounded bg-white/5 px-2 py-0.5 text-xs text-slate-400">{item}</span>
                     ))}
                   </div>
-                  <p className="text-xs text-slate-400">
-                    <span className="text-orange-400 font-medium">Suggested:</span> {customer.suggestedCombo}
-                  </p>
+                  <p className="text-xs text-slate-400"><span className="font-medium text-orange-400">Suggested:</span> {customer.suggestedCombo}</p>
                 </div>
-                <div className="flex items-center gap-3">
-                  <div className="text-right">
-                    <p className="text-xs text-slate-500">Potential Revenue</p>
-                    <p className="text-lg font-bold text-emerald-400">${customer.potentialRevenue}</p>
-                  </div>
-                  <button className="px-4 py-2 bg-orange-500 hover:bg-orange-600 text-white rounded-lg text-sm font-medium transition-colors">
-                    Send Offer
-                  </button>
+                <div className="text-right">
+                  <p className="text-xs text-slate-500">Potential Revenue</p>
+                  <p className="text-lg font-bold text-emerald-400">${customer.potentialRevenue}</p>
                 </div>
               </div>
             </div>
@@ -313,127 +191,47 @@ export const ComboMeals: React.FC = () => {
         </div>
       </div>
 
-      {/* Tips */}
-      <div className="bg-gradient-to-br from-[#13131a] to-orange-950/30 rounded-xl p-6 border border-white/5">
-        <h2 className="text-lg font-bold text-white mb-3">💡 Combo Optimization Tips</h2>
-        <ul className="space-y-2 text-sm text-slate-300">
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span>Customers who order 3+ items separately are 67% more likely to accept combo suggestions</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span>Family Feast performs best on Fridays and Saturdays between 6-8 PM</span>
-          </li>
-          <li className="flex items-start gap-2">
-            <span className="text-orange-400">•</span>
-            <span>Offering 15-20% discount on combos increases conversion by 34% for repeat customers</span>
-          </li>
-        </ul>
-      </div>
-
-      {/* Create Combo Modal */}
       <Dialog open={showNewCombo} onOpenChange={setShowNewCombo}>
-        <DialogContent className="bg-[#13131a] border border-white/10 text-white sm:max-w-md max-h-[85vh] overflow-y-auto">
+        <DialogContent className="max-h-[85vh] overflow-y-auto border border-white/10 bg-[#13131a] text-white sm:max-w-md">
           <DialogHeader>
-            <DialogTitle className="text-white flex items-center gap-2">
-              <Plus className="w-5 h-5 text-orange-500" />
+            <DialogTitle className="flex items-center gap-2 text-white">
+              <Plus className="h-5 w-5 text-orange-500" />
               Create New Combo
             </DialogTitle>
-            <DialogDescription className="text-slate-400">
-              Build a combo meal from available menu items
-            </DialogDescription>
+            <DialogDescription className="text-slate-400">Build a combo meal and persist it through the backend.</DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleSubmitCombo} className="space-y-4 mt-2">
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Combo Name</label>
-              <input
-                type="text"
-                required
-                value={formData.name}
-                onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                placeholder="e.g. Weekend Special"
-                className="w-full px-3 py-2 bg-[#1c1c24] border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50"
-              />
-            </div>
+          <form onSubmit={handleSubmitCombo} className="mt-2 space-y-4">
+            <Field label="Combo Name">
+              <input required value={formData.name} onChange={(event) => setFormData({ ...formData, name: event.target.value })} className="w-full rounded-lg border border-white/10 bg-[#1c1c24] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:outline-none" placeholder="e.g. Weekend Special" />
+            </Field>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-2">Included Items</label>
+            <Field label="Included Items">
               <div className="flex flex-wrap gap-2">
                 {availableMenuItems.map((item) => (
-                  <button
-                    key={item}
-                    type="button"
-                    onClick={() => toggleItem(item)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-medium border transition-colors ${selectedItems.includes(item)
-                      ? 'bg-orange-500/20 border-orange-500/40 text-orange-400'
-                      : 'bg-white/5 border-white/10 text-slate-400 hover:bg-white/10'
-                      }`}
-                  >
-                    {selectedItems.includes(item) && <CheckCircle className="w-3 h-3 inline mr-1" />}
+                  <button key={item} type="button" onClick={() => toggleItem(item)} className={`rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors ${selectedItems.includes(item) ? 'border-orange-500/40 bg-orange-500/20 text-orange-400' : 'border-white/10 bg-white/5 text-slate-400 hover:bg-white/10'}`}>
+                    {selectedItems.includes(item) ? <CheckCircle className="mr-1 inline h-3 w-3" /> : null}
                     {item}
                   </button>
                 ))}
               </div>
-              {selectedItems.length === 0 && (
-                <p className="text-xs text-rose-400 mt-1">Select at least one item</p>
-              )}
-            </div>
+            </Field>
 
             <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Price ($)</label>
-                <input
-                  type="number"
-                  required
-                  min="1"
-                  step="0.01"
-                  value={formData.price}
-                  onChange={(e) => setFormData({ ...formData, price: e.target.value })}
-                  placeholder="19.99"
-                  className="w-full px-3 py-2 bg-[#1c1c24] border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-300 mb-1">Discount (%)</label>
-                <input
-                  type="number"
-                  min="0"
-                  max="50"
-                  value={formData.discount}
-                  onChange={(e) => setFormData({ ...formData, discount: e.target.value })}
-                  placeholder="10"
-                  className="w-full px-3 py-2 bg-[#1c1c24] border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50"
-                />
-              </div>
+              <Field label="Price ($)">
+                <input required min="1" step="0.01" type="number" value={formData.price} onChange={(event) => setFormData({ ...formData, price: event.target.value })} className="w-full rounded-lg border border-white/10 bg-[#1c1c24] px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+              </Field>
+              <Field label="Discount (%)">
+                <input min="0" max="50" type="number" value={formData.discount} onChange={(event) => setFormData({ ...formData, discount: event.target.value })} className="w-full rounded-lg border border-white/10 bg-[#1c1c24] px-3 py-2 text-sm text-white focus:border-orange-500/50 focus:outline-none" />
+              </Field>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-slate-300 mb-1">Target Audience</label>
-              <input
-                type="text"
-                value={formData.targetAudience}
-                onChange={(e) => setFormData({ ...formData, targetAudience: e.target.value })}
-                placeholder="e.g. Families, Couples, Students"
-                className="w-full px-3 py-2 bg-[#1c1c24] border border-white/10 rounded-lg text-sm text-white placeholder-slate-500 focus:outline-none focus:border-orange-500/50"
-              />
-            </div>
+            <Field label="Target Audience">
+              <input value={formData.targetAudience} onChange={(event) => setFormData({ ...formData, targetAudience: event.target.value })} className="w-full rounded-lg border border-white/10 bg-[#1c1c24] px-3 py-2 text-sm text-white placeholder-slate-500 focus:border-orange-500/50 focus:outline-none" placeholder="e.g. Families or students" />
+            </Field>
 
             <DialogFooter>
-              <button
-                type="button"
-                onClick={() => setShowNewCombo(false)}
-                className="px-4 py-2 bg-white/5 border border-white/10 text-slate-300 rounded-lg text-sm hover:bg-white/10 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                type="submit"
-                disabled={selectedItems.length === 0}
-                className="px-4 py-2 bg-orange-500 hover:bg-orange-600 disabled:opacity-50 disabled:cursor-not-allowed text-white rounded-lg text-sm font-medium transition-colors"
-              >
-                Create Combo
-              </button>
+              <button type="button" onClick={() => setShowNewCombo(false)} className="rounded-lg border border-white/10 bg-white/5 px-4 py-2 text-sm text-slate-300 transition-colors hover:bg-white/10">Cancel</button>
+              <button type="submit" disabled={!selectedItems.length} className="rounded-lg bg-orange-500 px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-orange-600 disabled:cursor-not-allowed disabled:opacity-60">Create Combo</button>
             </DialogFooter>
           </form>
         </DialogContent>
@@ -441,3 +239,21 @@ export const ComboMeals: React.FC = () => {
     </div>
   );
 };
+
+const StatCard = ({ icon, label, value }: { icon: React.ReactNode; label: string; value: string }) => (
+  <div className="rounded-xl border border-white/5 bg-[#13131a] p-5">
+    <div className="mb-3 flex items-center justify-between">
+      <div className="rounded-lg bg-white/5 p-2">{icon}</div>
+      <span className="text-[10px] uppercase tracking-wide text-slate-500">Live</span>
+    </div>
+    <p className="text-sm text-slate-400">{label}</p>
+    <p className="mt-1 text-2xl font-bold text-white">{value}</p>
+  </div>
+);
+
+const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
+  <label className="block text-sm font-medium text-slate-300">
+    <span className="mb-1 block">{label}</span>
+    {children}
+  </label>
+);

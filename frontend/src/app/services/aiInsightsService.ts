@@ -24,13 +24,12 @@ export const aiInsightsService = {
     async fetchAIGrowthInsights(): Promise<AIInsightsResponse | null> {
         try {
             const response = await apiClient.get<ApiResponse>('/api/ai/insights');
-            if (response.data.status === 'success') {
-                return response.data.data as AIInsightsResponse;
-            }
-            // In case the API returns the raw object directly
             const rawData = response.data as any;
-            if (rawData.source && rawData.structured_insights) {
+            if (rawData?.source && Array.isArray(rawData?.structured_insights)) {
                 return rawData as AIInsightsResponse;
+            }
+            if (rawData?.status === 'success' && rawData?.data) {
+                return rawData.data as AIInsightsResponse;
             }
             throw new Error(response.data.message || 'Failed to fetch AI insights');
         } catch (error) {

@@ -1,60 +1,68 @@
-import { apiClient, ApiResponse } from './apiClient';
+import { ApiResponse, apiClient } from './apiClient';
 
 export interface WeeklyOrder {
-    name: string;
-    orders: number;
+  name: string;
+  orders: number;
 }
 
 export interface RegionalActivity {
-    name: string;
-    value: number;
+  name: string;
+  value: number;
 }
 
 export interface DashboardKPIs {
-    totalOrders?: number;
-    totalRevenue?: number;
-    dineInPercentage?: number;
-    avgOrderValue?: number;
+  totalOrders: number;
+  totalRevenue: number;
+  avgOrderValue: number;
+  takeoutPercentage: number;
+  deliveryPercentage: number;
+}
+
+export interface PantryStat {
+  label: string;
+  value: number;
+}
+
+export interface MenuPerformanceItem {
+  name: string;
+  category: string;
+  count: number;
 }
 
 export const ordersService = {
-    async fetchDashboardKPIs(): Promise<DashboardKPIs> {
-        try {
-            const response = await apiClient.get<ApiResponse>('/api/dashboard/stats');
-            if (response.data.status === 'success') {
-                return response.data.data.kpis || {};
-            }
-            throw new Error(response.data.message || 'Failed to fetch KPIs');
-        } catch (error) {
-            console.error('Failed to fetch KPIs, using empty fallback.', error);
-            return {};
-        }
-    },
-
-    async fetchWeeklyOrders(): Promise<{ weeklyOrders: WeeklyOrder[]; regionalActivity: RegionalActivity[] }> {
-        try {
-            const response = await apiClient.get<ApiResponse>('/api/dashboard/stats');
-            if (response.data.status === 'success') {
-                return {
-                    weeklyOrders: response.data.data.weekly_orders || [],
-                    regionalActivity: response.data.data.regional_activity || []
-                };
-            }
-            throw new Error(response.data.message || 'Failed to fetch weekly orders');
-        } catch (error) {
-            console.error('Failed to fetch weekly orders, using fallback data.', error);
-            return {
-                weeklyOrders: [
-                    { name: 'Mon', orders: 40 }, { name: 'Tue', orders: 30 },
-                    { name: 'Wed', orders: 20 }, { name: 'Thu', orders: 27 },
-                    { name: 'Fri', orders: 18 }, { name: 'Sat', orders: 23 },
-                    { name: 'Sun', orders: 34 },
-                ],
-                regionalActivity: [
-                    { name: 'Dine-in', value: 66 },
-                    { name: 'Delivery', value: 34 },
-                ]
-            };
-        }
+  async fetchDashboardStats(): Promise<{
+    kpis: DashboardKPIs;
+    weeklyOrders: WeeklyOrder[];
+    regionalActivity: RegionalActivity[];
+    pantryBreakdown: PantryStat[];
+    menuPerformance: MenuPerformanceItem[];
+  }> {
+    const response = await apiClient.get<ApiResponse>('/api/dashboard/stats');
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Failed to fetch dashboard stats');
     }
+
+    return {
+      kpis: response.data.data.kpis,
+      weeklyOrders: response.data.data.weekly_orders || [],
+      regionalActivity: response.data.data.regional_activity || [],
+      pantryBreakdown: response.data.data.pantry_breakdown || [],
+      menuPerformance: response.data.data.menu_performance || [],
+    };
+  },
+
+  async fetchInventorySnapshot(): Promise<{
+    pantryBreakdown: PantryStat[];
+    menuPerformance: MenuPerformanceItem[];
+  }> {
+    const response = await apiClient.get<ApiResponse>('/api/inventory');
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Failed to fetch inventory');
+    }
+
+    return {
+      pantryBreakdown: response.data.data.pantryBreakdown || [],
+      menuPerformance: response.data.data.menuPerformance || [],
+    };
+  },
 };

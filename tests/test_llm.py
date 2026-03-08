@@ -1,41 +1,42 @@
-import sys
-import os
+import json
 
-# Add project root to path so we can import backend modules
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+from backend.services import manager_chat
 
-from backend.services.llm import LLMClient
 
-def test_llm_connection():
-    print("Testing LLM Client...")
-    
-    try:
-        llm = LLMClient()
-        print("OK LLM Client initialized.")
-    except Exception as e:
-        print(f"[X] Failed to initialize LLM Client: {e}")
-        return
+class _FakeOllamaResponse:
+    def __init__(self, payload: dict):
+        self._payload = payload
 
-    # Test conversation
-    history = [{"role": "user", "content": "Hello! Who are you?"}]
-    print("\nSending: 'Hello! Who are you?'")
-    
-    response = llm.generate_response(history)
-    print(f"\nResponse:\n{response}")
+    def raise_for_status(self):
+        return None
 
-    # Test data extraction
-    fake_conversation = """
-    User: I'd like to book an appointment.
-    AI: Sure, what is your name?
-    User: John Doe.
-    AI: And your phone number?
-    User: 555-0199.
-    AI: When would you like to come in?
-    User: Next Tuesday at 10 AM for a haircut.
-    """
-    print("\nTesting Data Extraction...")
-    extracted_json = llm.extract_data(fake_conversation)
-    print(f"\nExtracted JSON:\n{extracted_json}")
+    def json(self):
+        return {"response": json.dumps(self._payload)}
 
-if __name__ == "__main__":
-    test_llm_connection()
+
+def test_chat_history_endpoint_tracks_messages(client, monkeypatch):
+    session_id = "history-test"
+
+    def fake_post(*_args, **_kwargs):
+        return _FakeOllamaResponse(
+            {
+                "intent": "combo_recommendation",
+                "reply": "Promote your strongest side-and-drink bundle during the dinner rush.",
+                "data": {"combo": "Fries and Coke"},
+                "recommendation": "Feature it in your phone script and menu highlights tonight.",
+            }
+        )
+
+    monkeypatch.setattr(manager_chat.requests, "post", fake_post)
+
+    chat_response = client.post("/voice/chat", json={"session_id": session_id, "message": "Which combos should I promote?"})
+
+    assert chat_response.status_code == 200
+
+    history_response = client.get(f"/voice/history/{session_id}")
+    assert history_response.status_code == 200
+
+    body = history_response.get_json()
+    assert body["status"] == "success"
+    assert len(body["data"]["messages"]) >= 2
+    assert body["data"]["messages"][-1]["content"] == "Promote your strongest side-and-drink bundle during the dinner rush."

@@ -1,132 +1,516 @@
 import json
-import requests
+import os
 import re
-from backend.services.analytics import get_business_context, compute_total_revenue, compute_top_customers, get_combo_opportunities
+from typing import Any
 
-OLLAMA_URL = 'http://localhost:11434/api/generate'
-OLLAMA_MODEL = 'gemma:2b'
+import requests
 
-INTENTS = [
-    "financial_analysis",
-    "menu_performance",
-    "combo_recommendation",
-    "customer_rewards",
-    "discount_strategy",
-    "peak_hours_analysis",
-    "customer_insights",
-    "marketing_recommendations",
-    "operational_recommendations",
-    "dashboard_help",
-    "general_question"
-]
+from backend.services.analytics import get_business_context
+from backend.services.app_state import (
+    get_combo_catalog,
+    get_discount_catalog,
+    get_holiday_events,
+    get_settings,
+)
+from backend.services.data_loader import load_customers
 
-def detect_intent_deterministic(query: str):
-    q = query.lower()
-    if any(w in q for w in ["revenue", "sales", "finance", "money", "profit"]): return "financial_analysis"
-    if any(w in q for w in ["menu", "item", "dish", "best", "worst", "popular"]): return "menu_performance"
-    if any(w in q for w in ["combo", "bundle", "meal"]): return "combo_recommendation"
-    if any(w in q for w in ["reward", "loyalty", "point", "vip"]): return "customer_rewards"
-    if any(w in q for w in ["discount", "coupon", "sale", "offer"]): return "discount_strategy"
-    if any(w in q for w in ["peak", "hour", "time", "busy"]): return "peak_hours_analysis"
-    if any(w in q for w in ["customer", "people", "guest"]): return "customer_insights"
-    if any(w in q for w in ["market", "promo", "campaign"]): return "marketing_recommendations"
-    if any(w in q for w in ["staff", "schedule", "operation", "employee"]): return "operational_recommendations"
-    if any(w in q for w in ["dashboard", "how to", "help", "click"]): return "dashboard_help"
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434/api/generate")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:1b")
+OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
+OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "160"))
+
+INTENT_KEYWORDS = {
+    "financial_analysis": ["revenue", "sales", "finance", "money", "profit"],
+    "menu_performance": ["menu", "item", "dish", "popular", "best", "worst"],
+    "combo_recommendation": ["combo", "bundle", "meal", "upsell"],
+    "customer_rewards": ["reward", "loyalty", "point", "vip", "discount"],
+    "discount_strategy": ["discount", "coupon", "offer", "promotion"],
+    "peak_hours_analysis": ["peak", "hour", "rush", "busy", "traffic"],
+    "customer_insights": ["customer", "guest", "retention", "repeat"],
+    "marketing_recommendations": ["marketing", "campaign", "promo", "advertise"],
+    "operational_recommendations": ["staff", "schedule", "operation", "inventory", "pantry"],
+    "dashboard_help": ["dashboard", "tab", "screen", "help", "where"],
+}
+
+META_OPENERS = (
+    "the user is asking",
+    "based on the query",
+    "the user wants to know",
+    "the question is about",
+    "the user is requesting",
+)
+
+STRATEGY_TERMS = (
+    "how can",
+    "how do i",
+    "what should",
+    "recommend",
+    "strategy",
+    "increase",
+    "improve",
+    "boost",
+    "promote",
+    "fix",
+    "grow",
+)
+
+CHEFAI_SYSTEM_PROMPT = """
+You are ChefAI, an AI restaurant operations and growth advisor.
+
+You assist restaurant owners, managers, and operators in making better decisions about their business.
+
+Your expertise includes:
+- restaurant revenue optimization
+- menu engineering
+- customer behavior analysis
+- promotions and marketing strategies
+- operations efficiency
+- upselling and combo design
+- holiday demand patterns
+- restaurant analytics and KPIs
+
+Your goal is to provide clear, intelligent, practical answers related to restaurant operations.
+
+Response style:
+- Answer the user's question directly and clearly first.
+- Use simple, professional language.
+- Do not use meta phrases like "The user is asking" or "Based on the query".
+- Do not force suggestions if the user only asked for information.
+- If suggestions help, include them naturally.
+- For explanation questions, explain customer behavior clearly.
+- For strategy questions, give practical actions.
+- For data questions, explain what the metric means for the business.
+- If information is limited, say so clearly.
+""".strip()
+
+
+def detect_intent_deterministic(query: str) -> str:
+    lowered = query.lower()
+    for intent, keywords in INTENT_KEYWORDS.items():
+        if any(keyword in lowered for keyword in keywords):
+            return intent
     return "general_question"
 
-def local_fallback_response(intent: str, query: str):
-    ctx = get_business_context()
-    if intent == "financial_analysis":
-        return {
-            "intent": intent,
-            "analysis": f"Your total revenue over the tracked period is {ctx['Total Revenue']}.",
-            "data": {"revenue": ctx['Total Revenue'], "aov": ctx['Average Order Value']},
-            "recommendation": "Try increasing the price of your most popular items slightly."
-        }
-    elif intent == "menu_performance":
-        return {
-            "intent": intent,
-            "analysis": f"Your top items are {ctx['Top Menu Items']}. Your worst items are {ctx['Worst Menu Items']}.",
-            "data": {"top": ctx['Top Menu Items'].split(", "), "worst": ctx['Worst Menu Items'].split(", ")},
-            "recommendation": "Consider dropping the worst-performing items or bundling them with popular ones."
-        }
-    elif intent == "peak_hours_analysis":
-        return {
-            "intent": intent,
-            "analysis": f"Your busiest time is {ctx['Peak Hours']}.",
-            "data": {"peak_hour": ctx['Peak Hours']},
-            "recommendation": "Ensure you have maximum staff scheduled during the peak hour."
-        }
-    elif intent == "combo_recommendation":
-        return {
-            "intent": intent,
-            "analysis": "Combos drive higher average order value.",
-            "data": get_combo_opportunities() or {},
-            "recommendation": "Review the Combo Meals tab for specific pairings based on past orders."
-        }
-    elif intent == "customer_rewards":
-        return {
-            "intent": intent,
-            "analysis": "Loyalty programs increase repeat visits.",
-            "data": {},
-            "recommendation": "Check the Rewards tab to identify top customers and send them a discount."
-        }
-    else:
-        return {
-            "intent": "general_question",
-            "analysis": "I am your ChefAI Assistant, focused on improving your restaurant's business performance.",
-            "data": {},
-            "recommendation": "Try asking me about your revenue, menu performance, or peak hours."
-        }
 
-def process_manager_query(query: str):
-    intent = detect_intent_deterministic(query)
-    ctx = get_business_context()
-    
-    prompt = f"""You are ChefAI, a restaurant manager intelligence assistant. You help the restaurant owner improve performance.
-Business Context:
-- Total Revenue: {ctx['Total Revenue']}
-- Average Order Value: {ctx['Average Order Value']}
-- Top Menu Items: {ctx['Top Menu Items']}
-- Worst Menu Items: {ctx['Worst Menu Items']}
-- Peak Hour: {ctx['Peak Hour'] if 'Peak Hour' in ctx else ctx['Peak Hours']}
+def _classify_question_style(query: str, intent: str) -> str:
+    lowered = query.lower()
+    if lowered.startswith("why") or "why " in lowered or "what does" in lowered or "mean" in lowered:
+        return "explanation"
+    if any(term in lowered for term in STRATEGY_TERMS):
+        return "strategy"
+    if intent in {"financial_analysis", "menu_performance", "peak_hours_analysis", "customer_insights"}:
+        return "data_interpretation"
+    return "general"
 
-User Query: "{query}"
 
-Respond EXACTLY as JSON in this format:
-{{
-  "intent": "{intent}",
-  "analysis": "1-2 sentences explaining exactly what the data implies.",
-  "data": {{"metric_name": "value"}},
-  "recommendation": "1-2 sentences of actionable business advice."
-}}
-"""
+def _should_include_recommendation(query: str, intent: str) -> bool:
+    lowered = query.lower()
+    if any(term in lowered for term in STRATEGY_TERMS):
+        return True
+    return intent in {
+        "combo_recommendation",
+        "discount_strategy",
+        "marketing_recommendations",
+        "operational_recommendations",
+    }
+
+
+def _top_customers(limit: int = 3) -> list[dict[str, Any]]:
+    ranked = sorted(load_customers(), key=lambda customer: customer.get("points", 0), reverse=True)
+    return [
+        {
+            "name": customer["name"],
+            "tier": customer.get("tier", "Bronze"),
+            "points": customer.get("points", 0),
+        }
+        for customer in ranked[:limit]
+    ]
+
+
+def _compact_combos(limit: int = 3) -> list[dict[str, Any]]:
+    return [
+        {"name": combo["name"], "items": combo["items"], "price": combo["price"]}
+        for combo in get_combo_catalog()[:limit]
+    ]
+
+
+def _discount_snapshot(limit: int = 3) -> list[dict[str, Any]]:
+    return [
+        {
+            "name": discount["name"],
+            "value": discount["value"],
+            "conditions": discount["conditions"],
+        }
+        for discount in get_discount_catalog()[:limit]
+    ]
+
+
+def _holiday_snapshot(limit: int = 3) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": holiday["title"],
+            "date": holiday["date"],
+            "impact": holiday["callVolumeImpact"],
+        }
+        for holiday in get_holiday_events()[:limit]
+    ]
+
+
+def _extract_json_payload(raw_text: str) -> dict[str, Any]:
+    candidate = raw_text.strip()
+    if candidate.startswith("```json"):
+        candidate = candidate.split("```json", 1)[1].rsplit("```", 1)[0].strip()
+    elif candidate.startswith("```"):
+        candidate = candidate.split("```", 1)[1].rsplit("```", 1)[0].strip()
+
     try:
-        res = requests.post(OLLAMA_URL, json={
-            "model": OLLAMA_MODEL,
-            "prompt": prompt,
-            "stream": False,
-            "format": "json"
-        }, timeout=8)
-        
-        if res.status_code == 200:
-            text = res.json().get('response', '')
-            try:
-                # Sometimes LLM outputs markdown formatting around JSON
-                if "```json" in text:
-                    text = text.split("```json")[1].split("```")[0].strip()
-                parsed = json.loads(text)
-                
-                # Ensure all fields are present
-                return {
-                    "intent": parsed.get("intent", intent),
-                    "analysis": parsed.get("analysis", "Analysis generated successfully."),
-                    "data": parsed.get("data", {}),
-                    "recommendation": parsed.get("recommendation", "Consider reviewing your dashboard metrics.")
-                }
-            except json.JSONDecodeError:
-                pass
-    except Exception as e:
-        print(f"[ChefAI] Ollama offline or error: {e}. Falling back deterministically.")
-    
+        return json.loads(candidate)
+    except json.JSONDecodeError:
+        start = candidate.find("{")
+        end = candidate.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            raise
+        return json.loads(candidate[start : end + 1])
+
+
+def _clean_text(value: Any) -> str:
+    text = str(value or "").strip()
+    if not text:
+        return ""
+
+    normalized = "\n".join(line.strip() for line in text.splitlines() if line.strip())
+    lowered = normalized.lower()
+    for opener in META_OPENERS:
+        if lowered.startswith(opener):
+            parts = normalized.split(". ", 1)
+            normalized = parts[1].strip() if len(parts) == 2 else ""
+            break
+
+    if normalized.lower().startswith("based on "):
+        parts = normalized.split(",", 1)
+        normalized = parts[1].strip() if len(parts) == 2 else normalized
+
+    if normalized.lower().startswith("tip:"):
+        normalized = normalized[4:].strip()
+    if normalized.lower().startswith("recommendation:"):
+        normalized = normalized[len("recommendation:") :].strip()
+    if normalized:
+        normalized = normalized[0].upper() + normalized[1:]
+    return normalized
+
+
+def _extract_string_field(raw_text: str, field_name: str) -> str:
+    pattern = rf'"{field_name}"\s*:\s*"((?:\\.|[^"\\])*)"'
+    match = re.search(pattern, raw_text, flags=re.DOTALL)
+    if not match:
+        return ""
+
+    return json.loads(f'"{match.group(1)}"')
+
+
+def _normalize_data(value: Any) -> dict[str, Any]:
+    if isinstance(value, dict):
+        return value
+    if value in (None, ""):
+        return {}
+    return {"summary": str(value)}
+
+
+def _compose_response(
+    *,
+    intent: str,
+    query: str,
+    reply: Any,
+    data: Any,
+    recommendation: Any,
+    source: str,
+) -> dict[str, Any]:
+    clean_reply = _clean_text(reply)
+    clean_recommendation = _clean_text(recommendation)
+
+    if not _should_include_recommendation(query, intent):
+        clean_recommendation = ""
+    elif clean_recommendation and clean_recommendation in clean_reply:
+        clean_recommendation = ""
+
+    if not clean_reply and clean_recommendation:
+        clean_reply = clean_recommendation
+        clean_recommendation = ""
+
+    return {
+        "intent": intent or "general_question",
+        "reply": clean_reply,
+        "analysis": clean_reply,
+        "data": _normalize_data(data),
+        "recommendation": clean_recommendation,
+        "reasoningSource": source,
+    }
+
+
+def _holiday_behavior_fallback(query: str) -> dict[str, Any] | None:
+    lowered = query.lower()
+
+    if "valentine" in lowered and "couple" in lowered:
+        reply = (
+            "Valentine's Day brings couples into restaurants because dining out feels like a special occasion. "
+            "People are usually looking for atmosphere, service, and a more memorable experience than they can create at home."
+        )
+        return _compose_response(
+            intent="holiday_demand_patterns",
+            query=query,
+            reply=reply,
+            data={"occasion": "Valentine's Day", "audience": "Couples"},
+            recommendation="",
+            source="fallback",
+        )
+
+    if lowered.startswith("why") and any(term in lowered for term in ["holiday", "anniversary", "festival"]):
+        reply = (
+            "Holiday traffic is usually driven by occasion-based spending. Guests are more willing to pay for convenience, "
+            "celebration, and a stronger dining experience when the date already feels special."
+        )
+        return _compose_response(
+            intent="holiday_demand_patterns",
+            query=query,
+            reply=reply,
+            data={},
+            recommendation="",
+            source="fallback",
+        )
+
+    return None
+
+
+def local_fallback_response(intent: str, query: str) -> dict[str, Any]:
+    context = get_business_context()
+    holiday_response = _holiday_behavior_fallback(query)
+    if holiday_response is not None:
+        return holiday_response
+
+    if intent == "financial_analysis":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply=(
+                f"Revenue currently sits at {context['Total Revenue']}, and your average order value is "
+                f"{context['Average Order Value']}."
+            ),
+            data={
+                "revenue": context["Total Revenue"],
+                "averageOrderValue": context["Average Order Value"],
+            },
+            recommendation="Focus on raising ticket size with targeted combo suggestions during peak traffic windows.",
+            source="fallback",
+        )
+
+    if intent == "menu_performance":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply=(
+                f"Your strongest menu items right now are {context['Top Menu Items']}. "
+                f"The weakest items are {context['Worst Menu Items']}."
+            ),
+            data={
+                "topItems": context["Top Menu Items"].split(", "),
+                "worstItems": context["Worst Menu Items"].split(", "),
+            },
+            recommendation=(
+                "Promote the strongest sellers more aggressively and review whether the weakest items need a bundle or refresh."
+            ),
+            source="fallback",
+        )
+
+    if intent == "combo_recommendation":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="Your combo data points to a clear upsell opportunity around your strongest repeat-order patterns.",
+            data={"combos": _compact_combos()},
+            recommendation=(
+                "Highlight your top two combos during dinner hours and route repeat customers toward the highest-margin bundle."
+            ),
+            source="fallback",
+        )
+
+    if intent in {"customer_rewards", "customer_insights"}:
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="Your highest-value guests are consistent repeat visitors, so they should anchor your retention campaigns.",
+            data={"topCustomers": _top_customers()},
+            recommendation="Offer a targeted reward to your top tier customers before the weekend rush to increase return visits.",
+            source="fallback",
+        )
+
+    if intent == "discount_strategy":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="Targeted discounts usually outperform blanket promotions because they protect margin while still driving repeat orders.",
+            data={"discounts": _discount_snapshot()},
+            recommendation=(
+                "Keep fixed-value offers for acquisition and percentage offers for repeat guests who already show high spend."
+            ),
+            source="fallback",
+        )
+
+    if intent == "peak_hours_analysis":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply=f"Your current peak order window is {context['Peak Hours']}.",
+            data={"peakHour": context["Peak Hours"]},
+            recommendation="Front-load prep and staffing at least one hour before that rush to reduce fulfillment delays.",
+            source="fallback",
+        )
+
+    if intent == "marketing_recommendations":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="Your marketing should follow menu momentum and seasonal demand spikes, not broad one-size-fits-all promotions.",
+            data={
+                "campaignIdeas": [
+                    "Weekend family combo push",
+                    "Loyalty reactivation SMS for Gold and Platinum tiers",
+                    "Pre-holiday reservation reminders",
+                ]
+            },
+            recommendation=(
+                "Send one campaign tied to your strongest combo and one campaign tied to your upcoming holiday traffic window."
+            ),
+            source="fallback",
+        )
+
+    if intent == "operational_recommendations":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="Operations improve fastest when staffing, inventory, and holiday planning all follow the same demand signals.",
+            data={"holidays": _holiday_snapshot()},
+            recommendation="Use the Holiday Schedule and Inventory views together when planning next week so staffing and stock move in sync.",
+            source="fallback",
+        )
+
+    if intent == "dashboard_help":
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply="The dashboard is wired to live data for analytics, transcripts, combos, holidays, and settings.",
+            data={
+                "sections": [
+                    "Dashboard for high-level revenue and pantry trends",
+                    "Analytics for call and order timing patterns",
+                    "Transcripts for recent call summaries and call history",
+                    "Rewards, Combos, Holidays, and Settings for persisted actions",
+                ]
+            },
+            recommendation="Start on the Dashboard for the daily picture, then drill into Analytics or Transcripts when something needs attention.",
+            source="fallback",
+        )
+
+    return _compose_response(
+        intent="general_question",
+        query=query,
+        reply=(
+            "I can help interpret revenue, menu performance, staffing windows, loyalty opportunities, and dashboard data."
+        ),
+        data={
+            "suggestions": [
+                "Ask about revenue trends",
+                "Ask which combos should be promoted",
+                "Ask which customers deserve a reward",
+            ]
+        },
+        recommendation="",
+        source="fallback",
+    )
+
+
+def process_manager_query(query: str, session_history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    intent = detect_intent_deterministic(query)
+    question_style = _classify_question_style(query, intent)
+    context = get_business_context()
+    settings = get_settings()
+    history_lines = []
+    for item in (session_history or [])[-6:]:
+        role = item.get("role", "user")
+        content = item.get("content", "")
+        history_lines.append(f"{role}: {content}")
+
+    prompt = f"""Return only valid JSON with keys intent, reply, data, recommendation.
+If no recommendation is needed, set recommendation to an empty string.
+Keep reply direct, practical, and free of meta commentary.
+
+Question style: {question_style}
+Detected intent: {intent}
+Total Revenue: {context['Total Revenue']}
+Average Order Value: {context['Average Order Value']}
+Top Menu Items: {context['Top Menu Items']}
+Worst Menu Items: {context['Worst Menu Items']}
+Peak Hours: {context['Peak Hours']}
+Voice Persona: {settings['voiceType']}
+Recent Conversation: {chr(10).join(history_lines) if history_lines else 'No previous context.'}
+User Question: {query}
+"""
+
+    try:
+        response = requests.post(
+            OLLAMA_URL,
+            json={
+                "model": OLLAMA_MODEL,
+                "system": CHEFAI_SYSTEM_PROMPT,
+                "prompt": prompt,
+                "stream": False,
+                "format": "json",
+                "options": {
+                    "temperature": 0.2,
+                    "num_predict": OLLAMA_MAX_TOKENS,
+                },
+            },
+            timeout=OLLAMA_TIMEOUT_SECONDS,
+        )
+        response.raise_for_status()
+
+        body = response.json().get("response", "").strip()
+        try:
+            parsed = _extract_json_payload(body)
+            result = _compose_response(
+                intent=parsed.get("intent", intent),
+                query=query,
+                reply=parsed.get("reply") or parsed.get("analysis") or parsed.get("recommendation"),
+                data=parsed.get("data", {}),
+                recommendation=parsed.get("recommendation", ""),
+                source=OLLAMA_MODEL,
+            )
+
+            if result["reply"]:
+                return result
+        except Exception:
+            partial_reply = _extract_string_field(body, "reply")
+            partial_recommendation = _extract_string_field(body, "recommendation")
+            if partial_reply:
+                return _compose_response(
+                    intent=intent,
+                    query=query,
+                    reply=partial_reply,
+                    data={},
+                    recommendation=partial_recommendation,
+                    source=OLLAMA_MODEL,
+                )
+
+            clean_body = _clean_text(body)
+            if clean_body:
+                return _compose_response(
+                    intent=intent,
+                    query=query,
+                    reply=clean_body,
+                    data={},
+                    recommendation="",
+                    source=OLLAMA_MODEL,
+                )
+    except Exception:
+        pass
+
     return local_fallback_response(intent, query)
