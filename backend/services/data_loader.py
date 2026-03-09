@@ -1,12 +1,12 @@
 import os
 import csv
 import json
-from backend.services.mock_data_generator import generate_all_mock_data
+from backend.ai_engine.mock_data_generator import generate
 
 DATA_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'data')
 
 # Ensure data exists before loading
-generate_all_mock_data()
+generate()
 
 def load_orders():
     orders = []
