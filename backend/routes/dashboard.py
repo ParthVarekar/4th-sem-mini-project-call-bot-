@@ -235,7 +235,7 @@ def get_rewards():
 
         customers.sort(key=lambda entry: entry['points'], reverse=True)
         discounts = get_discount_catalog()
-        return jsonify(success_response({'customers': customers[:20], 'discounts': discounts}))
+        return jsonify(success_response({'customers': customers[:5], 'discounts': discounts}))
     except Exception as exc:
         return _error(str(exc), 500)
 
@@ -362,5 +362,33 @@ def update_app_settings():
     try:
         settings = save_settings(payload)
         return jsonify(success_response({'settings': settings}))
+    except Exception as exc:
+        return _error(str(exc), 500)
+
+
+@dashboard_bp.route('/dashboard/sentiment', methods=['GET'])
+def get_dashboard_sentiment():
+    try:
+        from backend.ai_engine.sentiment_model import analyze_orders_sentiment
+        res = analyze_orders_sentiment()
+        score = float(res.get("score", 0.0))
+        
+        if score > 0.2:
+            trend = "up"
+        elif score < -0.2:
+            trend = "down"
+        else:
+            trend = "stable"
+            
+        return jsonify(
+            success_response({
+                "score": score,
+                "positive": res.get("positive", 0),
+                "negative": res.get("negative", 0),
+                "neutral": res.get("neutral", 0),
+                "total": res.get("total", 0),
+                "trend": trend
+            })
+        )
     except Exception as exc:
         return _error(str(exc), 500)

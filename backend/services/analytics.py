@@ -76,10 +76,20 @@ def get_business_context():
     peaks = compute_peak_hours(orders)
     peak_hour = f"{peaks[0][0]}:00" if peaks else "N/A"
     
-    return {
+    from backend.ai_engine.sentiment_model import analyze_orders_sentiment
+    sentiment_data = analyze_orders_sentiment()
+    sentiment_score = float(sentiment_data.get("score", 0.0))
+    
+    context = {
         "Total Revenue": f"${total_rev:.2f}",
         "Average Order Value": f"${avg_val:.2f}",
         "Top Menu Items": ", ".join(top_items),
         "Worst Menu Items": ", ".join(worst_items),
         "Peak Hours": peak_hour,
+        "sentiment_score": sentiment_score,
     }
+    
+    if sentiment_score < -0.3:
+        context["alert"] = "Customer dissatisfaction detected. Immediate action recommended."
+        
+    return context

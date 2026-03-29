@@ -259,7 +259,7 @@ def build_transcripts() -> list[dict[str, Any]]:
 
 
 def get_transcripts() -> list[dict[str, Any]]:
-    return _read_storage('transcripts.json', seed_factory=build_transcripts)
+    return _read_storage('ui_transcripts.json', seed_factory=build_transcripts)
 
 
 def get_discount_catalog() -> list[dict[str, Any]]:
@@ -371,7 +371,7 @@ def get_repeat_customer_recommendations() -> list[dict[str, Any]]:
         customer_orders.setdefault(customer_id, []).append(order)
 
     recommendations = []
-    for customer_id, grouped_orders in sorted(customer_orders.items(), key=lambda entry: len(entry[1]), reverse=True)[:6]:
+    for customer_id, grouped_orders in sorted(customer_orders.items(), key=lambda entry: len(entry[1]), reverse=True)[:5]:
         item_counter: Counter[str] = Counter()
         revenue = 0.0
         for order in grouped_orders:

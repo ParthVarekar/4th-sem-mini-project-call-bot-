@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
+import ReactMarkdown from 'react-markdown';
 import {
   LayoutDashboard,
   BarChart2,
@@ -322,7 +323,22 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
                       <Bot className="w-4 h-4 text-orange-500" />
                     </div>
                     <div className="bg-[#1c1c24] p-3 rounded-2xl rounded-tl-none border border-white/5 max-w-[85%]">
-                      <p className="text-xs text-slate-300 leading-relaxed">{msg.text}</p>
+                      <div className="text-xs text-slate-300 leading-relaxed">
+                        <ReactMarkdown
+                          components={{
+                            p: ({node, ...props}: any) => <p className="mb-2 last:mb-0" {...props} />,
+                            ul: ({node, ...props}: any) => <ul className="list-disc pl-4 mb-2 last:mb-0" {...props} />,
+                            ol: ({node, ...props}: any) => <ol className="list-decimal pl-4 mb-2 last:mb-0" {...props} />,
+                            li: ({node, ...props}: any) => <li className="mb-1" {...props} />,
+                            strong: ({node, ...props}: any) => <strong className="font-bold text-orange-200" {...props} />,
+                            h1: ({node, ...props}: any) => <h1 className="text-sm font-bold text-white mb-2 mt-3" {...props} />,
+                            h2: ({node, ...props}: any) => <h2 className="text-sm font-bold text-white mb-2 mt-2" {...props} />,
+                            h3: ({node, ...props}: any) => <h3 className="text-sm font-bold text-white mb-1 mt-2" {...props} />
+                          }}
+                        >
+                          {msg.text}
+                        </ReactMarkdown>
+                      </div>
                       <ChatDataRenderer intent={msg.intent} data={msg.data} />
                     </div>
                   </motion.div>
@@ -388,7 +404,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
       </motion.aside>
 
       {/* Main Content Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative z-10">
+      <div className="flex-1 flex flex-col min-w-0 relative z-10 h-screen">
         {/* Top Navbar */}
         <header className="h-16 flex items-center justify-between px-6 lg:px-8 border-b border-white/5 bg-[#0f1115]/80 backdrop-blur-md sticky top-0 z-30">
           <div className="flex items-center gap-4">

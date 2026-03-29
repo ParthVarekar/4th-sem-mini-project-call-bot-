@@ -11,9 +11,29 @@ INSIGHTS_PATH = DATA_DIR / "ai_structured_insights.json"
 
 
 def merge_insights(combo_insights: list[dict], sales_insights: list[dict]) -> dict:
-    """Combine combo and sales insights into a single structure."""
+    """Combine combo, sales, and sentiment insights into a single structure."""
+    from backend.ai_engine.sentiment_model import analyze_orders_sentiment
+    
+    sentiment_data = analyze_orders_sentiment()
+    score = float(sentiment_data.get("score", 0.0))
+    
+    if score < -0.2:
+        desc = "Customer sentiment is declining. Investigate service quality or food issues."
+    elif score > 0.3:
+        desc = "Customer satisfaction is high. Promote top-performing items."
+    else:
+        desc = "Customer sentiment is stable but has room for improvement."
+        
+    sentiment_insight = {
+        "type": "Sentiment",
+        "description": desc,
+        "significance": "High" if abs(score) >= 0.3 else "Medium"
+    }
+    
+    merged = combo_insights + sales_insights + [sentiment_insight]
+    
     return {
-        "structured_insights": combo_insights + sales_insights,
+        "structured_insights": merged,
         "combo_count": len(combo_insights),
         "sales_count": len(sales_insights),
     }

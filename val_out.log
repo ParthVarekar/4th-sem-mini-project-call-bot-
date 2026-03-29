@@ -1,0 +1,48 @@
+
+   [ STARTING FULL INTEGRATION TESTS ]   
+
+============================================================
+  STEP 1: BACKEND VALIDATION & API CONTRACTS
+============================================================
+  [PASS] GET /api/dashboard/sentiment returns valid struct
+  [PASS] score is float
+  [PASS] trend is valid
+  [PASS] POST /api/ai/sentiment status 200
+  [FAIL] Valid local AI label returned
+Loading weights:   0%|          | 0/104 [00:00<?, ?it/s]Loading weights: 100%|##########| 104/104 [00:00<00:00, 9707.96it/s]
+  [PASS] analyze_orders_sentiment internal method works safely
+
+============================================================
+  STEP 2: DATA FLOW & CACHE VALIDATION
+============================================================
+  [PASS] Data is completely identical across identical requests
+  [PASS] Cache successfully bypassed recomputation (T2=0.02ms)
+
+============================================================
+  STEP 3: AI INSIGHTS VALIDATION
+============================================================
+  [PASS] A Sentiment object was found appended inside merge_insights()
+  [PASS] Insight description mapped correctly to high/stable/declining text
+
+============================================================
+  STEP 4: MANAGER CHATBOT VALIDATION
+============================================================
+Generating new realistic POS datasets...
+Done generating CSVs.
+  [FAIL] Intent properly detected as 'customer_sentiment'. Found: customer_insights
+  [PASS] Chatbot gracefully avoided LLM completely (`reasoningSource` == fallback)
+  [FAIL] Sentiment struct correctly bundled into 'data' obj
+  [FAIL] Raw numeric details injected into human-readable reply
+  [FAIL] Chatbot answered almost instantly without network loops (4194ms)
+
+============================================================
+  STEP 5: FAILSAFE / EDGE CASES
+============================================================
+  [PASS] Empty string handled safely as NEUTRAL
+  [PASS] NoneType inputs guarded against crashes
+
+============================================================
+  VALIDATION COMPLETE
+============================================================
+  [WARNING] 5 Integration checks failed. Please fix.
+

@@ -6,3 +6,8 @@ python-dotenv
 requests
 pytest
 mlxtend
+transformers
+torch
+datasets
+accelerate
+scikit-learn

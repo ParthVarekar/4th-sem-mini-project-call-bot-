@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from 'react';
 import { Cell, Pie, PieChart, ResponsiveContainer, Bar, BarChart, CartesianGrid, Tooltip, XAxis, YAxis } from 'recharts';
-import { DollarSign, Loader2, Package, ShoppingBag, Truck } from 'lucide-react';
+import { Activity, ArrowDown, ArrowUp, DollarSign, Lightbulb, Loader2, Package, ShoppingBag, Truck } from 'lucide-react';
 
-import { ordersService, DashboardKPIs, MenuPerformanceItem, PantryStat, RegionalActivity, WeeklyOrder } from '../services/ordersService';
+import { ordersService, DashboardKPIs, MenuPerformanceItem, PantryStat, RegionalActivity, WeeklyOrder, SentimentData } from '../services/ordersService';
+import { aiInsightsService, AIInsight } from '../services/aiInsightsService';
 import { LoyaltyCustomer, rewardsService } from '../services/rewardsService';
 import { FrequentCustomerTracker } from './FrequentCustomerTracker';
 
@@ -15,14 +16,19 @@ export const Dashboard: React.FC = () => {
   const [kpis, setKpis] = useState<DashboardKPIs | null>(null);
   const [pantryBreakdown, setPantryBreakdown] = useState<PantryStat[]>([]);
   const [menuPerformance, setMenuPerformance] = useState<MenuPerformanceItem[]>([]);
+  const [sentiment, setSentiment] = useState<SentimentData | null>(null);
+  const [sentimentError, setSentimentError] = useState(false);
+  const [insights, setInsights] = useState<AIInsight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const [dashboardData, rewardsData] = await Promise.all([
+        const [dashboardData, rewardsData, sentimentData, insightsData] = await Promise.all([
           ordersService.fetchDashboardStats(),
           rewardsService.fetchRewardsData(),
+          ordersService.fetchSentiment().catch(() => null),
+          aiInsightsService.fetchAIGrowthInsights().catch(() => null)
         ]);
 
         setWeeklyOrdersData(dashboardData.weeklyOrders);
@@ -31,6 +37,11 @@ export const Dashboard: React.FC = () => {
         setMenuPerformance(dashboardData.menuPerformance);
         setKpis(dashboardData.kpis);
         setTopLoyaltyCustomers(rewardsData.customers.slice(0, 3));
+        setSentiment(sentimentData);
+        if (insightsData?.structured_insights) {
+          setInsights(insightsData.structured_insights);
+        }
+        if (!sentimentData) setSentimentError(true);
       } catch (error) {
         console.error('Dashboard data load failed:', error);
       } finally {
@@ -60,7 +71,7 @@ export const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5">
         <MetricCard
           icon={<ShoppingBag className="h-5 w-5 text-orange-400" />}
           label="Weekly Orders"
@@ -85,11 +96,39 @@ export const Dashboard: React.FC = () => {
           value={`${kpis?.deliveryPercentage || 0}%`}
           subtitle={`${kpis?.takeoutPercentage || 0}% takeout`}
         />
+        
+        {sentimentError || !sentiment ? (
+          <div className="rounded-2xl border border-white/5 bg-[#13131a] p-5 shadow-xl flex items-center justify-center">
+            <p className="text-sm text-slate-500">No sentiment data available</p>
+          </div>
+        ) : (
+          <MetricCard
+            icon={<Activity className={`h-5 w-5 ${sentiment.score > 0 ? "text-emerald-400" : sentiment.score < 0 ? "text-rose-400" : "text-yellow-400"}`} />}
+            label="Customer Sentiment"
+            value={`${(Math.abs(sentiment.score) * 100).toFixed(0)}%`}
+            valueColor={sentiment.score > 0 ? "text-emerald-400" : sentiment.score < 0 ? "text-rose-400" : "text-yellow-400"}
+            subtitle={
+              <div className="flex items-center gap-1">
+                {sentiment.trend === "up" ? <ArrowUp className="h-3 w-3 text-emerald-500" /> : 
+                 sentiment.trend === "down" ? <ArrowDown className="h-3 w-3 text-rose-500" /> : null}
+                <span className={sentiment.trend === "up" ? "text-emerald-500" : sentiment.trend === "down" ? "text-rose-500" : "text-yellow-500"}>
+                  {sentiment.trend.charAt(0).toUpperCase() + sentiment.trend.slice(1)} ({sentiment.positive}pos, {sentiment.negative}neg)
+                </span>
+              </div>
+            }
+          />
+        )}
       </div>
 
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
         <div className="relative overflow-hidden rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl lg:col-span-2">
           <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Weekly Orders</h3>
+          {insights.find(i => i.type === 'busiest_day') && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-orange-500/20 bg-orange-500/10 p-4 text-sm text-orange-200">
+              <Lightbulb className="mr-1 mt-0.5 h-4 w-4 shrink-0 text-orange-400" />
+              <p><strong>AI Insight:</strong> {insights.find(i => i.type === 'busiest_day')?.day} is historically your busiest day, driving about {insights.find(i => i.type === 'busiest_day')?.order_count} orders. Optimize prep levels for this volume.</p>
+            </div>
+          )}
           <div className="h-64">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={weeklyOrdersData}>
@@ -164,6 +203,12 @@ export const Dashboard: React.FC = () => {
 
         <div className="rounded-3xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
           <h3 className="mb-6 text-xs font-bold uppercase tracking-widest text-slate-500">Menu Performance</h3>
+          {insights.find(i => i.type === 'popular_item') && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+              <Lightbulb className="mr-1 mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              <p><strong>AI Insight:</strong> {JSON.parse(insights.find(i => i.type === 'popular_item')?.item || '[]').join(' & ')} is currently trending with {insights.find(i => i.type === 'popular_item')?.order_count} recent orders. Ensure ingredients are stocked.</p>
+            </div>
+          )}
           <div className="space-y-4">
             {menuPerformance.map((item) => (
               <MenuItem key={item.name} item={item} />
@@ -175,15 +220,15 @@ export const Dashboard: React.FC = () => {
   );
 };
 
-const MetricCard = ({ icon, label, value, subtitle }: { icon: React.ReactNode; label: string; value: string; subtitle: string }) => (
+const MetricCard = ({ icon, label, value, subtitle, valueColor = "text-white" }: { icon: React.ReactNode; label: string; value: string; subtitle: React.ReactNode | string; valueColor?: string }) => (
   <div className="rounded-2xl border border-white/5 bg-[#13131a] p-5 shadow-xl">
     <div className="mb-4 flex items-center justify-between">
       <div className="rounded-xl bg-white/5 p-3">{icon}</div>
       <span className="text-[10px] uppercase tracking-wide text-slate-500">Live</span>
     </div>
     <p className="text-sm text-slate-400">{label}</p>
-    <p className="mt-1 text-2xl font-bold text-white">{value}</p>
-    <p className="mt-1 text-xs text-slate-500">{subtitle}</p>
+    <p className={`mt-1 text-2xl font-bold ${valueColor}`}>{value.includes("-") ? value : (valueColor === "text-rose-400" ? `-${value}` : value)}</p>
+    <div className="mt-1 text-xs text-slate-500">{subtitle}</div>
   </div>
 );
 

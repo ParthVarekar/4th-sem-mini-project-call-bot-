@@ -20,6 +20,7 @@ OLLAMA_TIMEOUT_SECONDS = int(os.getenv("OLLAMA_TIMEOUT_SECONDS", "60"))
 OLLAMA_MAX_TOKENS = int(os.getenv("OLLAMA_MAX_TOKENS", "160"))
 
 INTENT_KEYWORDS = {
+    "customer_sentiment": ["sentiment", "feel", "reviews", "review", "satisfaction"],
     "financial_analysis": ["revenue", "sales", "finance", "money", "profit"],
     "menu_performance": ["menu", "item", "dish", "popular", "best", "worst"],
     "combo_recommendation": ["combo", "bundle", "meal", "upsell"],
@@ -200,12 +201,28 @@ def _clean_text(value: Any) -> str:
 
 
 def _extract_string_field(raw_text: str, field_name: str) -> str:
-    pattern = rf'"{field_name}"\s*:\s*"((?:\\.|[^"\\])*)"'
+    # Match the field and everything after the quote. The closing quote is optional in case of truncation.
+    pattern = rf'"{field_name}"\s*:\s*"((?:\\.|[^"\\])*)'
     match = re.search(pattern, raw_text, flags=re.DOTALL)
     if not match:
         return ""
-
-    return json.loads(f'"{match.group(1)}"')
+    
+    extracted = match.group(1)
+    try:
+        return json.loads(f'"{extracted}"')
+    except json.JSONDecodeError:
+        # If JSON loading fails (e.g., due to an incomplete escape sequence at the end of truncation)
+        # we can strip any trailing backslash and try again, or just return it raw.
+        if extracted.endswith('\\'):
+            extracted = extracted[:-1]
+        try:
+            return json.loads(f'"{extracted}"')
+        except json.JSONDecodeError:
+            try:
+                # Fallback to safely unescape newlines so ReactMarkdown can work its magic
+                return extracted.encode('utf-8').decode('unicode_escape')
+            except Exception:
+                return extracted
 
 
 def _normalize_data(value: Any) -> dict[str, Any]:
@@ -286,6 +303,31 @@ def local_fallback_response(intent: str, query: str) -> dict[str, Any]:
     holiday_response = _holiday_behavior_fallback(query)
     if holiday_response is not None:
         return holiday_response
+
+    if intent == "customer_sentiment":
+        from backend.ai_engine.sentiment_model import analyze_orders_sentiment
+        res = analyze_orders_sentiment()
+        score = float(res.get("score", 0.0))
+        
+        if score > 0.2:
+            trend = "up"
+        elif score < -0.2:
+            trend = "down"
+        else:
+            trend = "stable"
+            
+        return _compose_response(
+            intent=intent,
+            query=query,
+            reply=(
+                f"Customer sentiment score is {score}. "
+                f"There are {res.get('positive', 0)} positive and {res.get('negative', 0)} negative responses. "
+                f"Overall trend is {trend}."
+            ),
+            data={"sentiment": res, "trend": trend},
+            recommendation="Review transcripts regularly if the trend shows signs of decline.",
+            source="fallback",
+        )
 
     if intent == "financial_analysis":
         return _compose_response(
@@ -430,6 +472,10 @@ def local_fallback_response(intent: str, query: str) -> dict[str, Any]:
 
 def process_manager_query(query: str, session_history: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     intent = detect_intent_deterministic(query)
+    
+    if intent == "customer_sentiment":
+        return local_fallback_response(intent, query)
+        
     question_style = _classify_question_style(query, intent)
     context = get_business_context()
     settings = get_settings()
@@ -438,6 +484,100 @@ def process_manager_query(query: str, session_history: list[dict[str, Any]] | No
         role = item.get("role", "user")
         content = item.get("content", "")
         history_lines.append(f"{role}: {content}")
+
+    jit_context = ""
+    
+    try:
+        import pandas as pd
+        import re
+        
+        # ── Always include a compact DB summary ──
+        try:
+            cust_df = pd.read_csv("backend/data/customers.csv")
+            tier_counts = cust_df['tier'].value_counts().to_dict()
+            jit_context += f"Database Summary: {len(cust_df)} total customers. "
+            jit_context += f"Tier distribution: {tier_counts}. "
+            jit_context += f"Avg loyalty points: {cust_df['loyalty_points'].mean():.0f}. "
+            jit_context += f"Avg total spent: ${cust_df['total_spent'].mean():.2f}.\n"
+        except Exception:
+            pass
+        
+        try:
+            orders_df = pd.read_csv("backend/data/orders.csv")
+            jit_context += f"Total orders: {len(orders_df)}. "
+            jit_context += f"Avg order value: ${orders_df['total_price'].mean():.2f}. "
+            jit_context += f"Total revenue: ${orders_df['total_price'].sum():.2f}.\n"
+        except Exception:
+            pass
+
+        try:
+            inv_df = pd.read_csv("backend/data/inventory.csv")
+            low_stock = inv_df[inv_df['current_stock'] < inv_df['reorder_level']]
+            if not low_stock.empty:
+                jit_context += f"Low stock alert: {low_stock['ingredient_name'].tolist()}\n"
+        except Exception:
+            pass
+
+        # ── Targeted lookups for specific entity queries ──
+        customer_match = re.search(r'customer\s+\d+', query.lower())
+        staff_match = re.search(r'staff\s+\d+|server\s+\d+', query.lower())
+        
+        if staff_match:
+            term = staff_match.group(0).replace('server', 'staff')
+            try:
+                staff_df = pd.read_csv("backend/data/staff.csv")
+                matches = staff_df[staff_df.apply(lambda r: r.astype(str).str.contains(term, case=False).any(), axis=1)]
+                if not matches.empty:
+                    jit_context += f"Staff Record: {matches.head(1).to_dict('records')}\n"
+                    # Also find orders served by this staff member
+                    sid = matches.iloc[0].get('server_id')
+                    if sid is not None and 'orders_df' in dir():
+                        staff_orders = orders_df[orders_df['server_id'] == sid]
+                        jit_context += f"This staff member has served {len(staff_orders)} orders totaling ${staff_orders['total_price'].sum():.2f}.\n"
+            except Exception:
+                pass
+                
+        if customer_match:
+            term = customer_match.group(0)
+            try:
+                if 'cust_df' not in dir():
+                    cust_df = pd.read_csv("backend/data/customers.csv")
+                matches = cust_df[cust_df.apply(lambda r: r.astype(str).str.contains(term, case=False).any(), axis=1)]
+                if not matches.empty:
+                    jit_context += f"Customer Record: {matches.head(1).to_dict('records')}\n"
+                    # Also find this customer's recent orders
+                    cid = matches.iloc[0].get('customer_id')
+                    if cid is not None:
+                        try:
+                            if 'orders_df' not in dir():
+                                orders_df = pd.read_csv("backend/data/orders.csv")
+                            cust_orders = orders_df[orders_df['customer_id'] == cid].tail(5)
+                            if not cust_orders.empty:
+                                jit_context += f"Recent orders by this customer: {cust_orders[['order_id','items','total_price','timestamp']].to_dict('records')}\n"
+                        except Exception:
+                            pass
+            except Exception:
+                pass
+
+        # ── Combo lookup if user asks about combos ──
+        if any(w in query.lower() for w in ['combo', 'bundle', 'meal deal', 'package']):
+            try:
+                combo_df = pd.read_csv("backend/data/combo_meals.csv")
+                jit_context += f"Available combo meals: {combo_df[['name','price','popularity_score']].to_dict('records')}\n"
+            except Exception:
+                pass
+
+        # ── Inventory lookup ──
+        if any(w in query.lower() for w in ['inventory', 'stock', 'ingredient', 'supply', 'pantry']):
+            try:
+                if 'inv_df' not in dir():
+                    inv_df = pd.read_csv("backend/data/inventory.csv")
+                jit_context += f"Current inventory: {inv_df[['ingredient_name','current_stock','reorder_level']].to_dict('records')}\n"
+            except Exception:
+                pass
+
+    except Exception as e:
+        pass
 
     prompt = f"""Return only valid JSON with keys intent, reply, data, recommendation.
 If no recommendation is needed, set recommendation to an empty string.
@@ -451,6 +591,7 @@ Top Menu Items: {context['Top Menu Items']}
 Worst Menu Items: {context['Worst Menu Items']}
 Peak Hours: {context['Peak Hours']}
 Voice Persona: {settings['voiceType']}
+{jit_context}
 Recent Conversation: {chr(10).join(history_lines) if history_lines else 'No previous context.'}
 User Question: {query}
 """

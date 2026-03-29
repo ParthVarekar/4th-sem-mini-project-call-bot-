@@ -29,6 +29,15 @@ export interface MenuPerformanceItem {
   count: number;
 }
 
+export interface SentimentData {
+  score: number;
+  positive: number;
+  negative: number;
+  neutral: number;
+  total: number;
+  trend: string;
+}
+
 export const ordersService = {
   async fetchDashboardStats(): Promise<{
     kpis: DashboardKPIs;
@@ -64,5 +73,13 @@ export const ordersService = {
       pantryBreakdown: response.data.data.pantryBreakdown || [],
       menuPerformance: response.data.data.menuPerformance || [],
     };
+  },
+
+  async fetchSentiment(): Promise<SentimentData> {
+    const response = await apiClient.get<ApiResponse>('/api/dashboard/sentiment');
+    if (response.data.status !== 'success') {
+      throw new Error(response.data.message || 'Failed to fetch sentiment');
+    }
+    return response.data.data as SentimentData;
   },
 };

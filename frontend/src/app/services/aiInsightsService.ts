@@ -2,7 +2,6 @@ import { apiClient, ApiResponse } from './apiClient';
 
 export interface AIInsight {
     type: 'combo' | 'peak_hour' | 'popular_item' | 'avg_order_value' | 'busiest_day';
-    // Base properties and dynamic depending on type
     items?: string[];
     support?: number;
     confidence?: number;
@@ -13,11 +12,19 @@ export interface AIInsight {
     day?: string;
 }
 
+export interface InsightCard {
+    title: string;
+    category: 'combo' | 'operations' | 'loyalty' | 'product' | 'issue' | 'growth';
+    description: string;
+    metric: string;
+}
+
 export interface AIInsightsResponse {
     source: string;
     status: string;
     recommendations: string;
     structured_insights: AIInsight[];
+    insight_cards?: InsightCard[];
 }
 
 export const aiInsightsService = {
@@ -33,7 +40,7 @@ export const aiInsightsService = {
             }
             throw new Error(response.data.message || 'Failed to fetch AI insights');
         } catch (error) {
-            console.error('Failed to fetch AI insights. AI Recommendations will not be fully populated until backend is available.', error);
+            console.error('Failed to fetch AI insights.', error);
             return null;
         }
     }

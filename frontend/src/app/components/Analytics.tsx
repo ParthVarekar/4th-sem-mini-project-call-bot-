@@ -1,24 +1,32 @@
 import React, { useEffect, useState } from 'react';
 import { Area, AreaChart, Bar, BarChart, CartesianGrid, Legend, Line, LineChart, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
-import { Activity, Clock3, DollarSign, Loader2, PhoneCall } from 'lucide-react';
+import { Activity, Clock3, DollarSign, Lightbulb, Loader2, PhoneCall } from 'lucide-react';
 
 import { analyticsService, AnalyticsKPIs, CallVolume, OrderTrends, PeakHours } from '../services/analyticsService';
+import { aiInsightsService, AIInsight } from '../services/aiInsightsService';
 
 export const Analytics: React.FC = () => {
   const [volumeData, setVolumeData] = useState<CallVolume[]>([]);
   const [peakHoursData, setPeakHoursData] = useState<PeakHours[]>([]);
   const [orderTrendsData, setOrderTrendsData] = useState<OrderTrends[]>([]);
   const [kpis, setKpis] = useState<AnalyticsKPIs | null>(null);
+  const [insights, setInsights] = useState<AIInsight[]>([]);
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     async function loadData() {
       try {
-        const analytics = await analyticsService.fetchAnalyticsDashboard();
+        const [analytics, insightsData] = await Promise.all([
+          analyticsService.fetchAnalyticsDashboard(),
+          aiInsightsService.fetchAIGrowthInsights().catch(() => null)
+        ]);
         setVolumeData(analytics.volume);
         setPeakHoursData(analytics.peaks);
         setOrderTrendsData(analytics.trends);
         setKpis(analytics.kpis);
+        if (insightsData?.structured_insights) {
+          setInsights(insightsData.structured_insights);
+        }
       } catch (error) {
         console.error('Failed to load analytics data', error);
       } finally {
@@ -75,6 +83,12 @@ export const Analytics: React.FC = () => {
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         <div className="rounded-xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
           <h3 className="mb-6 text-lg font-semibold text-white">Peak Hours: Morning vs Evening</h3>
+          {insights.find(i => i.type === 'peak_hour') && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-sky-500/20 bg-sky-500/10 p-4 text-sm text-sky-200">
+              <Lightbulb className="mr-1 mt-0.5 h-4 w-4 shrink-0 text-sky-400" />
+              <p><strong>AI Insight:</strong> Absolute peak order volume forms exactly at {insights.find(i => i.type === 'peak_hour')?.hour}:00 with a sustained {insights.find(i => i.type === 'peak_hour')?.order_count} orders over time. Stage deliveries for this window.</p>
+            </div>
+          )}
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <BarChart data={peakHoursData}>
@@ -92,6 +106,12 @@ export const Analytics: React.FC = () => {
 
         <div className="rounded-xl border border-white/5 bg-[#13131a] p-6 shadow-xl">
           <h3 className="mb-6 text-lg font-semibold text-white">Order Value Trends</h3>
+          {insights.find(i => i.type === 'avg_order_value') && (
+            <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-4 text-sm text-emerald-200">
+              <Lightbulb className="mr-1 mt-0.5 h-4 w-4 shrink-0 text-emerald-400" />
+              <p><strong>AI Insight:</strong> Systemic Average Order Value is currently drifting at ${insights.find(i => i.type === 'avg_order_value')?.value?.toFixed(2)}. Suggest combos during initial call greeting to up-sell.</p>
+            </div>
+          )}
           <div className="h-72">
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={orderTrendsData}>

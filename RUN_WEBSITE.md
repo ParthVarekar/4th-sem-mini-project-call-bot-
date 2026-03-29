@@ -74,7 +74,9 @@ Ensure Ollama is installed and available in your system `PATH`.
    ```
 
 ## 6. Starting the Full Stack
-Three separate terminals must be used to run the stack.
+For convenience on Windows machines, a `start_all.ps1` script is provided in the root directory. Right-click and run it with PowerShell, or execute `.\start_all.ps1` to instantly boot all three services into background windows.
+
+If you prefer to start them manually, three separate terminals must be used to run the stack:
 
 ### TERMINAL 1 — Start Ollama (MANDATORY)
 Start the Ollama server:
