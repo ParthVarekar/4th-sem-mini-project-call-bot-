@@ -13,7 +13,7 @@ The application will not function correctly if any of these services are missing
 The runtime flow operates as follows:
 
 ```
-Frontend UI (port 5173)
+Frontend UI (port 6969)
 ↓
 Backend API (port 5000)
 ↓
@@ -31,7 +31,7 @@ The following services must be running simultaneously:
 | :--- | :--- | :--- |
 | **Ollama** | 11434 | AI model runtime |
 | **Flask Backend** | 5000 | API + chatbot routing |
-| **Vite Frontend** | 5173 | User interface |
+| **Vite Frontend** | 6969 | User interface |
 
 ## 4. Prerequisites
 Ensure the following software is installed on the host machine:
@@ -108,10 +108,10 @@ The backend should start at: `http://localhost:5000`
    ```bash
    npm run dev
    ```
-The frontend will start at: `http://localhost:5173`
+The frontend will start at: `http://localhost:6969`
 
 ## 7. Verifying Services
-Open the application in a browser at `http://localhost:5173`.
+Open the application in a browser at `http://localhost:6969`.
 
 Login using any email/password (mock authentication). Verify that the following pages load and display live data:
 
@@ -184,7 +184,7 @@ When the system is fully operational:
 
 *   Ollama server running on port `11434`
 *   Flask backend running on port `5000`
-*   React frontend running on port `5173`
+*   React frontend running on port `6969`
 *   Health endpoint reports `"ollamaReady": true`
 *   Chatbot produces AI-generated responses based on business context
 *   Dashboard loads real analytics data from the local data files

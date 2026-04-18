@@ -186,9 +186,32 @@ export const Insights: React.FC<{ onNavigate?: (tab: string) => void }> = ({ onN
             <span className="text-sm font-medium uppercase tracking-wider text-orange-200">AI Monthly Summary</span>
           </div>
           <h2 className="mb-4 text-3xl font-bold">Summary from the latest recommendation cache</h2>
-          <p className="text-lg leading-relaxed text-slate-300">
-            {insightsData?.recommendations || 'No recommendation summary available. Run the AI training pipeline to refresh.'}
-          </p>
+          <div className="text-lg leading-relaxed text-slate-300">
+            {(() => {
+              if (!insightsData?.recommendations) return 'No recommendation summary available. Run the AI training pipeline to refresh.';
+              let text = insightsData.recommendations.trim();
+              if (text.startsWith('```json')) text = text.replace(/```json\n?/g, '').replace(/```/g, '').trim();
+              if (text.startsWith('[')) {
+                try {
+                  const parsed = JSON.parse(text);
+                  if (Array.isArray(parsed)) {
+                    return (
+                      <ul className="list-inside list-disc space-y-2">
+                        {parsed.map((item: any, idx: number) => (
+                          <li key={idx}>
+                            <strong className="text-white">{item.title || 'Insight'}:</strong> {item.description || item.summary || ''}
+                          </li>
+                        ))}
+                      </ul>
+                    );
+                  }
+                } catch (e) {
+                  // Fallback to text
+                }
+              }
+              return <div className="whitespace-pre-wrap">{insightsData.recommendations}</div>;
+            })()}
+          </div>
         </div>
       </div>
     </div>
